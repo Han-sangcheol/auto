@@ -58,7 +58,7 @@
 설치 후 다음 파일들이 생성되었는지 확인:
 ```
 C:\OpenAPI\
-├── KHOpenAPI.dll
+├── KHOpenAPI.dll 
 ├── KHOpenAPILib.dll
 └── 기타 관련 파일들
 ```

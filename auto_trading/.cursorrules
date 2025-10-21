@@ -1,0 +1,118 @@
+# auto_trading 폴더 전용 규칙
+
+## 작업 환경
+- 현재 디렉토리: `auto_trading/`
+- 가상환경: `../.venv/` (상위 폴더)
+- Python 인터프리터: `../.venv/Scripts/python.exe`
+
+## 터미널 명령어
+
+### 가상환경 활성화 확인
+```powershell
+# PowerShell에서
+if ($env:VIRTUAL_ENV) {
+    Write-Output "가상환경 활성화됨: $env:VIRTUAL_ENV"
+} else {
+    Write-Output "가상환경 비활성화 상태"
+    # 활성화
+    ..\.venv\Scripts\Activate.ps1
+}
+```
+
+### 패키지 관리
+```powershell
+# 패키지 설치
+pip install -r requirements.txt
+
+# 새 패키지 추가 후
+pip freeze > requirements.txt
+```
+
+### 프로그램 실행
+```powershell
+# 메인 프로그램
+python main.py
+
+# 설정 확인
+python -c "from config import Config; Config.print_config()"
+
+# 로그 확인
+type logs\trading.log
+```
+
+## 파일 수정 시 주의사항
+
+### config.py
+- 환경 변수 검증 로직 유지
+- 기본값 설정 신중하게
+
+### kiwoom_api.py
+- API 호출 제한 준수 (초당 5건)
+- 에러 처리 철저히
+- 이벤트 루프 관리 주의
+
+### strategies.py
+- 신호 생성 로직 변경 시 백테스팅 필수
+- 기존 전략과의 호환성 고려
+
+### risk_manager.py
+- 리스크 파라미터 변경은 보수적으로
+- 손절/익절 로직 테스트 필수
+
+### trading_engine.py
+- 상태 관리 철저히
+- 에러 복구 로직 완비
+- 로깅 충분히
+
+## 디버깅
+
+### 로그 레벨 변경
+```python
+# .env 파일에서
+LOG_LEVEL=DEBUG  # 상세 로그
+LOG_LEVEL=INFO   # 일반 로그 (기본값)
+LOG_LEVEL=ERROR  # 에러만
+```
+
+### 테스트 모드
+```python
+# 각 모듈의 __main__ 블록 사용
+if __name__ == "__main__":
+    # 테스트 코드
+    pass
+```
+
+## 코드 스타일
+
+### 임포트 순서
+```python
+# 1. 표준 라이브러리
+import sys
+from datetime import datetime
+
+# 2. 서드파티 라이브러리
+import pandas as pd
+from PyQt5.QtWidgets import QApplication
+
+# 3. 로컬 모듈
+from config import Config
+from logger import log
+```
+
+### 타입 힌트
+```python
+def calculate_sma(prices: List[float], period: int) -> Optional[float]:
+    """단순 이동평균 계산"""
+    pass
+```
+
+## 실행 전 체크리스트
+- [ ] 가상환경 활성화됨
+- [ ] .env 파일 존재 및 설정 완료
+- [ ] logs/ 디렉토리 존재
+- [ ] 키움 Open API 설치됨
+- [ ] 모의투자 모드 설정됨
+
+
+
+

@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 REM 자동매매 프로그램 설치 스크립트
 
 echo ==========================================
@@ -21,9 +22,9 @@ python --version
 echo.
 
 REM 가상환경 생성
-if not exist venv (
+if not exist .venv (
     echo 가상환경 생성 중...
-    python -m venv venv
+    python -m venv .venv
     echo 가상환경 생성 완료!
 ) else (
     echo 가상환경이 이미 존재합니다.
@@ -32,7 +33,7 @@ echo.
 
 REM 가상환경 활성화
 echo 가상환경 활성화 중...
-call venv\Scripts\activate.bat
+call .venv\Scripts\activate.bat
 
 REM pip 업그레이드
 echo pip 업그레이드 중...
