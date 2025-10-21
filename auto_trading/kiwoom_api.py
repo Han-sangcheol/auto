@@ -1,6 +1,27 @@
 """
 키움 Open API 연동 래퍼 모듈
-키움증권 Open API+와 통신하는 Python 래퍼 클래스
+
+[파일 역할]
+키움증권 Open API+와 통신하는 Python 래퍼 클래스입니다.
+복잡한 COM 객체 통신을 간단한 Python 메서드로 래핑합니다.
+
+[주요 기능]
+- 공동인증서 로그인 처리
+- 계좌 정보 조회 (잔고, 보유 종목)
+- 주문 전송 (매수, 매도)
+- 실시간 시세 데이터 수신
+- TR (Transaction) 조회
+- API 호출 제한 관리 (초당 5건)
+
+[중요 사항]
+- Windows 전용 (COM 객체 사용)
+- 키움 Open API+ 설치 필수
+- PyQt5 이벤트 루프 필요
+
+[사용 방법]
+kiwoom = KiwoomAPI()
+if kiwoom.login():
+    balance = kiwoom.get_account_balance()
 """
 
 import sys

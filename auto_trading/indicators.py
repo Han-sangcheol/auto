@@ -1,6 +1,26 @@
 """
 기술적 지표 계산 모듈
-매매 전략에 필요한 기술적 지표를 계산합니다.
+
+[파일 역할]
+매매 전략에 필요한 기술적 지표(Technical Indicators)를 계산합니다.
+
+[구현된 지표]
+- SMA (Simple Moving Average): 단순 이동평균
+- EMA (Exponential Moving Average): 지수 이동평균
+- RSI (Relative Strength Index): 상대강도지수
+- MACD (Moving Average Convergence Divergence): 이동평균수렴확산
+- Bollinger Bands: 볼린저 밴드
+- Stochastic: 스토캐스틱
+
+[사용 방법]
+from indicators import calculate_sma, calculate_rsi
+sma_5 = calculate_sma(prices, 5)
+rsi = calculate_rsi(prices, 14)
+
+[참고]
+- 모든 함수는 순수 함수 (side effect 없음)
+- prices는 시간 순서대로 정렬된 리스트
+- 데이터 부족 시 None 반환
 """
 
 import numpy as np

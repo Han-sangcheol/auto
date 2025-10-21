@@ -1,6 +1,32 @@
 """
 매매 전략 모듈
-다양한 매매 전략을 구현하고 신호를 생성합니다.
+
+[파일 역할]
+다양한 매매 전략을 구현하고 매수/매도/관망 신호를 생성합니다.
+
+[구현된 전략]
+1. MovingAverageCrossStrategy: 이동평균선 크로스오버
+   - 골든크로스: 단기 MA > 장기 MA → 매수
+   - 데드크로스: 단기 MA < 장기 MA → 매도
+
+2. RSIStrategy: RSI 기반 과매수/과매도
+   - RSI < 30: 과매도 → 매수
+   - RSI > 70: 과매수 → 매도
+
+3. MACDStrategy: MACD 크로스오버
+   - MACD > Signal: 상승 모멘텀 → 매수
+   - MACD < Signal: 하락 모멘텀 → 매도
+
+4. MultiStrategy: 다중 전략 통합 (합의 알고리즘)
+   - 여러 전략의 신호를 종합하여 최종 결정
+   - 2개 이상 전략 동의 시 실행 (기본값)
+
+[사용 방법]
+strategy = MovingAverageCrossStrategy()
+signal = strategy.generate_signal(prices)
+
+[전략 추가 방법]
+BaseStrategy를 상속하여 generate_signal() 메서드 구현
 """
 
 from enum import Enum
