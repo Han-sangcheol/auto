@@ -1,89 +1,87 @@
 @echo off
-chcp 65001 >nul
-REM 자동매매 프로그램 실행 스크립트
+REM CleonAI Auto-Trading Start Script
 
 echo.
-echo ╔══════════════════════════════════════════════════════════╗
-echo ║                                                          ║
-echo ║          CleonAI 자동매매 프로그램 시작                  ║
-echo ║                                                          ║
-echo ╚══════════════════════════════════════════════════════════╝
+echo ==========================================================
+echo.
+echo          CleonAI Auto-Trading Program Start
+echo.
+echo ==========================================================
 echo.
 
-REM 실행 전 체크리스트
-echo [체크리스트]
+REM Pre-flight checklist
+echo [Checklist]
 echo.
 
-REM .env 파일 확인
+REM Check .env file
 if not exist .env (
-    echo [X] .env 파일이 없습니다!
+    echo [X] .env file not found!
     echo.
-    echo 먼저 setup.bat을 실행하고 .env 파일을 설정하세요.
+    echo Please run setup.bat or setup.ps1 first and configure .env file.
     echo.
     pause
     exit /b 1
 ) else (
-    echo [OK] .env 파일 존재
+    echo [OK] .env file exists
 )
 
-REM 가상환경 확인
+REM Check virtual environment
 if exist .venv\Scripts\activate.bat (
-    echo [OK] 가상환경 존재
+    echo [OK] Virtual environment exists
 ) else (
-    echo [X] 가상환경을 찾을 수 없습니다!
+    echo [X] Virtual environment not found!
     echo.
-    echo setup.bat을 먼저 실행하세요.
+    echo Please run setup.bat or setup.ps1 first.
     echo.
     pause
     exit /b 1
 )
 
-REM logs 폴더 확인
+REM Check logs folder
 if not exist logs (
-    echo [!] logs 폴더 생성 중...
+    echo [!] Creating logs folder...
     mkdir logs
 )
-echo [OK] logs 폴더 존재
+echo [OK] Logs folder exists
 
 echo.
 echo ==========================================
-echo    프로그램 초기화 중...
+echo    Initializing program...
 echo ==========================================
 echo.
 
-REM 가상환경 활성화
+REM Activate virtual environment
 call .venv\Scripts\activate.bat
 
-REM Python 실행
-echo [실행] Python 프로그램 시작...
+REM Run Python program
+echo [Running] Starting Python program...
 echo.
-echo ※ 공동인증서 창이 나타나면 인증서를 선택하고 비밀번호를 입력하세요.
-echo ※ Ctrl+C를 눌러 언제든지 중지할 수 있습니다.
+echo ** When certificate window appears, select your certificate and enter password.
+echo ** Press Ctrl+C to stop the program at any time.
 echo.
 python main.py
 
-REM 종료 처리
+REM Exit handling
 set EXIT_CODE=%ERRORLEVEL%
 echo.
 echo ==========================================
-echo    프로그램 종료
+echo    Program Terminated
 echo ==========================================
 echo.
 
 if %EXIT_CODE% EQU 0 (
-    echo [정상 종료] 프로그램이 정상적으로 종료되었습니다.
+    echo [Normal Exit] Program terminated normally.
 ) else (
-    echo [오류 발생] 프로그램이 오류와 함께 종료되었습니다.
+    echo [Error] Program terminated with errors.
     echo.
-    echo 오류 해결:
-    echo 1. logs\error.log 파일 확인
-    echo 2. TROUBLESHOOTING.md 참고
-    echo 3. 설정 파일(.env) 확인
+    echo Troubleshooting:
+    echo 1. Check logs\error.log file
+    echo 2. See TROUBLESHOOTING.md
+    echo 3. Check .env configuration
     echo.
 )
 
 echo.
-echo 로그 파일: logs\trading.log, logs\error.log
+echo Log files: logs\trading.log, logs\error.log
 echo.
 pause
-

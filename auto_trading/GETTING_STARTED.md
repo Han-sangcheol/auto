@@ -178,7 +178,7 @@
 
 1. **키움증권 홈페이지 로그인**
    - 주소: https://www.kiwoom.com
-
+ 
 2. **Open API 신청**
    - 트레이딩 → Open API
    - "이용 신청" 클릭
@@ -251,14 +251,26 @@ cd cleonAI/auto_trading
 1. **`auto_trading` 폴더 열기**
    - Windows 탐색기에서 `auto_trading` 폴더 열기
 
-2. **`setup.bat` 파일 더블클릭**
-   - 자동으로 다음 작업이 수행됩니다:
-     - Python 버전 확인
-     - 가상환경 생성 (`.venv` 폴더)
-     - pip 업그레이드
-     - 필요한 패키지 설치 (약 3-5분 소요)
-     - `logs` 폴더 생성
-     - `.env` 파일 생성
+2. **설치 스크립트 실행**
+   
+   **PowerShell 방식 (권장):**
+   - `setup.ps1` 파일 우클릭 → "PowerShell에서 실행"
+   
+   **CMD 방식:**
+   - `setup.bat` 파일 더블클릭
+   
+   자동으로 다음 작업이 수행됩니다:
+   - Python 버전 확인
+   - 가상환경 생성 (`.venv` 폴더)
+   - pip 업그레이드
+   - 필요한 패키지 설치 (약 3-5분 소요)
+   - `logs` 폴더 생성
+   - `.env` 파일 생성
+   
+   > **PowerShell 실행 정책 오류 시:**
+   > ```powershell
+   > Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+   > ```
 
 3. **설치 완료 확인**
    ```
@@ -448,8 +460,13 @@ MIN_SIGNAL_STRENGTH=2                     # 최소 신호 강도 (1-3)
 
 ## 4.2. 프로그램 실행
 
-1. **`start.bat` 파일 더블클릭**
-   - `auto_trading` 폴더에서 `start.bat` 실행
+1. **프로그램 실행**
+   
+   **PowerShell 방식 (권장):**
+   - `start.ps1` 파일 우클릭 → "PowerShell에서 실행"
+   
+   **CMD 방식:**
+   - `start.bat` 파일 더블클릭
 
 2. **프로그램 시작 화면**
    ```

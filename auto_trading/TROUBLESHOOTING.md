@@ -275,6 +275,76 @@ TAKE_PROFIT_PERCENT=8     # 8% 상승 시 익절 (더 빠르게)
 
 ## API 오류
 
+### 문제: "QAxBase::setControl: requested control KHOPENAPI.KHOpenAPICtrl.1 could not be instantiated"
+
+```
+QAxBase::setControl: requested control KHOPENAPI.KHOpenAPICtrl.1 could not be instantiated
+❌ 예상치 못한 오류 발생: 'QAxWidget' object has no attribute 'OnEventConnect'
+```
+
+#### 원인 1: Python 64비트 사용 ⚠️ 가장 흔한 원인
+
+**확인 방법**:
+```powershell
+python -c "import sys; print('64-bit' if sys.maxsize > 2**32 else '32-bit')"
+```
+
+출력이 `64-bit`라면 이것이 문제입니다.
+
+**해결 방법**:
+
+키움 Open API는 **32비트 Python만 지원**합니다.
+
+**Option 1: 자동 설정 (권장)**
+```powershell
+.\setup_python32.ps1
+```
+
+**Option 2: 수동 설정**
+1. Python 32비트 다운로드
+   - https://www.python.org/downloads/
+   - "Windows installer (32-bit)" 선택
+   
+2. 독립적으로 설치
+   - 설치 경로: `C:\Python32\`
+   - **UNCHECK** "Add Python to PATH" (중요!)
+   
+3. 기존 가상환경 삭제 및 재생성
+   ```powershell
+   Remove-Item -Recurse -Force .venv
+   C:\Python32\python.exe -m venv .venv
+   .\setup.ps1
+   ```
+
+**자세한 가이드**: [SETUP_ISOLATED_PYTHON.md](SETUP_ISOLATED_PYTHON.md)
+
+> **참고**: 이 방법은 시스템의 다른 Python 64비트에 영향을 주지 않습니다.  
+> 완전히 독립적인 환경을 구축합니다.
+
+#### 원인 2: 키움 Open API+ 미설치
+
+**확인 방법**:
+```
+C:\OpenAPI\ 폴더가 존재하는지 확인
+```
+
+**해결 방법**:
+1. 키움증권 홈페이지에서 Open API+ 다운로드
+2. 설치 프로그램 실행
+3. PC 재시작
+4. 프로그램 재실행
+
+#### 원인 3: Windows 레지스트리 문제
+
+드물지만 OCX 등록이 안 된 경우:
+
+**해결 방법** (관리자 권한 CMD):
+```cmd
+cd C:\OpenAPI
+regsvr32 /u KHOpenAPI.ocx
+regsvr32 KHOpenAPI.ocx
+```
+
 ### 문제: "API 사용량 초과" 오류
 
 ```

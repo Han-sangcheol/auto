@@ -12,7 +12,7 @@
 - [x] 키움 Open API+ 설치
 - [x] 공동인증서 준비
 - [x] 모의투자 또는 실계좌
-- [x] 프로그램 설치 완료 (`setup.bat` 실행)
+- [x] 프로그램 설치 완료 (`setup.ps1` 또는 `setup.bat` 실행)
 - [x] `.env` 파일 설정 완료
 
 ## 3단계 빠른 시작
@@ -32,11 +32,22 @@ USE_SIMULATION=True                 # 모의투자 여부
 
 `auto_trading` 폴더에서:
 
+**PowerShell (권장):**
+```
+start.ps1
+```
+
+**CMD:**
 ```
 start.bat
 ```
 
-더블클릭하여 실행합니다.
+파일을 더블클릭하거나 우클릭하여 실행합니다.
+
+> **PowerShell 실행 정책 오류 시:**
+> ```powershell
+> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+> ```
 
 ### 3단계: 로그인 및 시작 (1분)
 

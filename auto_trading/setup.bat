@@ -1,120 +1,118 @@
 @echo off
-chcp 65001 >nul
-REM 자동매매 프로그램 설치 스크립트
+REM CleonAI Auto-Trading Setup Script
 
 echo ==========================================
-echo    CleonAI 자동매매 프로그램 설치
+echo    CleonAI Auto-Trading Setup
 echo ==========================================
 echo.
 
-REM Python 버전 확인
+REM Check Python version
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo 오류: Python이 설치되지 않았습니다.
-    echo Python 3.11 이상을 설치해주세요.
-    echo https://www.python.org/downloads/
+    echo Error: Python is not installed.
+    echo Please install Python 3.11 or higher.
+    echo Download: https://www.python.org/downloads/
     pause
     exit /b 1
 )
 
-echo Python 버전 확인:
+echo Python version check:
 python --version
 echo.
 
-REM 가상환경 생성
+REM Create virtual environment
 if not exist .venv (
-    echo 가상환경 생성 중...
+    echo Creating virtual environment...
     python -m venv .venv
-    echo 가상환경 생성 완료!
+    echo Virtual environment created!
 ) else (
-    echo 가상환경이 이미 존재합니다.
+    echo Virtual environment already exists.
 )
 echo.
 
-REM 가상환경 활성화
-echo 가상환경 활성화 중...
+REM Activate virtual environment
+echo Activating virtual environment...
 call .venv\Scripts\activate.bat
 
-REM pip 업그레이드
-echo pip 업그레이드 중...
+REM Upgrade pip
+echo Upgrading pip...
 python -m pip install --upgrade pip
 echo.
 
-REM 패키지 설치
-echo 필요한 패키지 설치 중...
-echo (약 5분 소요될 수 있습니다)
+REM Install packages
+echo Installing required packages...
+echo (This may take about 5 minutes)
 pip install -r requirements.txt
 echo.
 
-REM logs 디렉토리 생성
+REM Create logs directory
 if not exist logs (
-    echo 로그 디렉토리 생성 중...
+    echo Creating logs directory...
     mkdir logs
 )
 
-REM .env 파일 확인 및 생성
+REM Check and create .env file
 if not exist .env (
     echo.
     echo ==========================================
-    echo    .env 파일 생성 중...
+    echo    Creating .env file...
     echo ==========================================
     echo.
     if exist env.template (
         copy env.template .env >nul 2>&1
-        echo [성공] .env 파일이 생성되었습니다.
+        echo [Success] .env file created.
         echo.
         echo ==========================================
-        echo    중요: .env 파일을 편집하세요!
+        echo    IMPORTANT: Edit .env file!
         echo ==========================================
         echo.
-        echo 다음 단계:
-        echo 1. 메모장으로 .env 파일 열기
-        echo 2. 필수 항목 입력:
-        echo    - KIWOOM_ACCOUNT_NUMBER (계좌번호)
-        echo    - KIWOOM_ACCOUNT_PASSWORD (비밀번호 4자리)
-        echo    - WATCH_LIST (관심 종목)
+        echo Next steps:
+        echo 1. Open .env file with Notepad
+        echo 2. Fill in required fields:
+        echo    - KIWOOM_ACCOUNT_NUMBER (account number)
+        echo    - KIWOOM_ACCOUNT_PASSWORD (4-digit password)
+        echo    - WATCH_LIST (stocks to watch)
         echo.
-        echo 예시:
+        echo Example:
         echo KIWOOM_ACCOUNT_NUMBER=8123456789
         echo KIWOOM_ACCOUNT_PASSWORD=1234
         echo WATCH_LIST=005930,000660,035720
         echo.
     ) else if exist .env.example (
         copy .env.example .env >nul 2>&1
-        echo [성공] .env 파일이 생성되었습니다.
-        echo 이제 .env 파일을 편집하여 설정을 완료하세요.
+        echo [Success] .env file created.
+        echo Please edit .env file to complete setup.
     ) else (
-        echo [경고] env.template 파일을 찾을 수 없습니다.
-        echo 수동으로 .env 파일을 생성하세요.
+        echo [Warning] env.template file not found.
+        echo Please create .env file manually.
     )
 ) else (
-    echo [확인] .env 파일이 이미 존재합니다.
+    echo [OK] .env file already exists.
     echo.
 )
 
 echo.
 echo ==========================================
-echo    설치가 완료되었습니다!
+echo    Setup Complete!
 echo ==========================================
 echo.
-echo 다음 단계:
+echo Next Steps:
 echo.
-echo [1단계] .env 파일 설정
-echo    - auto_trading\.env 파일을 메모장으로 열기
-echo    - 계좌번호, 비밀번호, 관심 종목 입력
-echo    - 저장 후 닫기
+echo [Step 1] Configure .env file
+echo    - Open auto_trading\.env with Notepad
+echo    - Enter account number, password, and stock list
+echo    - Save and close
 echo.
-echo [2단계] 키움 Open API 준비 (처음 사용하는 경우)
-echo    - KIWOOM_API_SETUP.md 참고
-echo    - Open API+ 프로그램 설치
-echo    - 공동인증서 준비
+echo [Step 2] Setup Kiwoom Open API (for first-time users)
+echo    - See KIWOOM_API_SETUP.md
+echo    - Install Open API+ program
+echo    - Prepare digital certificate
 echo.
-echo [3단계] 프로그램 실행
-echo    - start.bat 더블클릭
-echo    - 공동인증서로 로그인
+echo [Step 3] Run the program
+echo    - Run start.bat or start.ps1
+echo    - Login with digital certificate
 echo.
-echo 자세한 가이드: GETTING_STARTED.md 참고
-echo 빠른 시작: QUICKSTART.md 참고
+echo Detailed guide: GETTING_STARTED.md
+echo Quick start: QUICKSTART.md
 echo.
 pause
-

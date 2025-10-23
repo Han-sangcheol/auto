@@ -19,9 +19,13 @@
 ## 시스템 요구사항
 
 - **운영체제**: Windows 10/11 (64비트)
-- **Python**: 3.11 이상
+- **Python**: 3.11 이상 **⚠️ 32비트 버전 필수** (키움 API 요구사항)
 - **메모리**: 4GB RAM 이상
 - **키움증권**: 계좌 + Open API+ 설치 + 공동인증서
+
+> **중요**: 키움 Open API는 32비트 Python만 지원합니다.  
+> 이미 64비트 Python을 사용 중이라면, 별도로 32비트를 설치하여 독립적으로 사용할 수 있습니다.  
+> 자세한 내용: [SETUP_ISOLATED_PYTHON.md](SETUP_ISOLATED_PYTHON.md)
 
 ## 문서 가이드
 
@@ -61,14 +65,20 @@
 ## 빠른 시작 (요약)
 
 ```bash
+# 0. Python 32비트 설치 (처음 1회만) ⚠️ 필수
+# 자동 설정: .\setup_python32.ps1
+# 수동 가이드: SETUP_ISOLATED_PYTHON.md
+
 # 1. 설치 스크립트 실행 (처음 1회만)
-setup.bat
+setup.ps1     # PowerShell (권장)
+setup.bat     # CMD
 
 # 2. .env 파일 설정
 # 계좌번호, 비밀번호, 관심 종목 입력
 
 # 3. 프로그램 실행
-start.bat
+start.ps1     # PowerShell (권장)
+start.bat     # CMD
 ```
 
 ## 프로젝트 구조
@@ -83,8 +93,10 @@ auto_trading/
 ├── FAQ.md                 # 자주 묻는 질문
 ├── TROUBLESHOOTING.md     # 문제 해결
 ├── .env.example           # 설정 템플릿
-├── setup.bat              # 설치 스크립트
-├── start.bat              # 실행 스크립트
+├── setup.ps1              # 설치 스크립트 (PowerShell)
+├── setup.bat              # 설치 스크립트 (CMD)
+├── start.ps1              # 실행 스크립트 (PowerShell)
+├── start.bat              # 실행 스크립트 (CMD)
 ├── requirements.txt       # 패키지 목록
 ├── main.py                # 프로그램 진입점
 ├── config.py              # 설정 관리
