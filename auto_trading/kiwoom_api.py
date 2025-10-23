@@ -291,6 +291,65 @@ class KiwoomAPI:
             log.error(f"현재가 조회 중 오류: {e}")
             return None
     
+    def get_top_traded_stocks(self, count: int = 100) -> List[Dict]:
+        """
+        당일 거래대금 상위 종목 조회
+        
+        Args:
+            count: 조회할 종목 수 (최대 100)
+        
+        Returns:
+            거래대금 상위 종목 리스트
+            [{'code': '005930', 'name': '삼성전자', 'price': 75000, 
+              'change_rate': 2.5, 'volume': 15000000, 'trade_value': 1125000000000}, ...]
+        """
+        try:
+            self._wait_for_request()
+            
+            # OPT10023: 거래량상위요청 (거래대금 기준으로 정렬 가능)
+            self.ocx.dynamicCall(
+                "SetInputValue(QString, QString)",
+                "시장구분",
+                "000"  # 000: 코스피, 001: 코스닥, 전체
+            )
+            self.ocx.dynamicCall(
+                "SetInputValue(QString, QString)",
+                "정렬구분",
+                "1"  # 0: 거래량, 1: 거래대금
+            )
+            self.ocx.dynamicCall(
+                "SetInputValue(QString, QString)",
+                "관리종목포함",
+                "0"  # 0: 미포함, 1: 포함
+            )
+            self.ocx.dynamicCall(
+                "SetInputValue(QString, QString)",
+                "거래량구분",
+                "0"  # 0: 전체
+            )
+            
+            self.request_event_loop = QEventLoop()
+            ret = self.ocx.dynamicCall(
+                "CommRqData(QString, QString, int, QString)",
+                "거래대금상위요청",
+                "OPT10023",
+                0,
+                "2003"
+            )
+            
+            if ret == 0:
+                self.request_event_loop.exec_()
+                top_stocks = self.data_cache.get('top_traded_stocks', [])
+                # 요청한 개수만큼만 반환
+                return top_stocks[:count]
+            else:
+                log.error(f"거래대금 상위 종목 조회 실패: {ret}")
+                return []
+                
+        except Exception as e:
+            log.error(f"거래대금 상위 종목 조회 중 오류: {e}")
+            return []
+    
     def buy_order(
         self,
         stock_code: str,
@@ -477,6 +536,55 @@ class KiwoomAPI:
                 self.data_cache['current_price'] = {
                     'current_price': abs(int(current_price))
                 }
+            
+            elif rqname == "거래대금상위요청":
+                count = self.ocx.dynamicCall(
+                    "GetRepeatCnt(QString, QString)",
+                    trcode, rqname
+                )
+                top_stocks = []
+                for i in range(count):
+                    stock_code = self.ocx.dynamicCall(
+                        "GetCommData(QString, QString, int, QString)",
+                        trcode, rqname, i, "종목코드"
+                    ).strip()
+                    stock_name = self.ocx.dynamicCall(
+                        "GetCommData(QString, QString, int, QString)",
+                        trcode, rqname, i, "종목명"
+                    ).strip()
+                    current_price = self.ocx.dynamicCall(
+                        "GetCommData(QString, QString, int, QString)",
+                        trcode, rqname, i, "현재가"
+                    ).strip()
+                    change_rate = self.ocx.dynamicCall(
+                        "GetCommData(QString, QString, int, QString)",
+                        trcode, rqname, i, "등락률"
+                    ).strip()
+                    volume = self.ocx.dynamicCall(
+                        "GetCommData(QString, QString, int, QString)",
+                        trcode, rqname, i, "거래량"
+                    ).strip()
+                    trade_value = self.ocx.dynamicCall(
+                        "GetCommData(QString, QString, int, QString)",
+                        trcode, rqname, i, "거래대금"
+                    ).strip()
+                    
+                    # 빈 값 체크 및 파싱
+                    if stock_code and stock_name and current_price:
+                        try:
+                            top_stocks.append({
+                                'code': stock_code,
+                                'name': stock_name,
+                                'price': abs(int(current_price)),
+                                'change_rate': float(change_rate) if change_rate else 0.0,
+                                'volume': int(volume) if volume else 0,
+                                'trade_value': int(trade_value) if trade_value else 0,
+                            })
+                        except ValueError:
+                            # 파싱 오류 시 해당 종목 건너뛰기
+                            continue
+                
+                self.data_cache['top_traded_stocks'] = top_stocks
             
         except Exception as e:
             log.error(f"TR 데이터 처리 중 오류: {e}")

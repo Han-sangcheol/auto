@@ -18,6 +18,7 @@ start.bat (더블클릭)
 """
 
 import sys
+import threading
 from PyQt5.QtWidgets import QApplication
 from kiwoom_api import KiwoomAPI
 from trading_engine import TradingEngine
@@ -38,6 +39,75 @@ def print_banner():
     """
     print(banner)
     print()
+
+
+def create_surge_approval_callback():
+    """급등주 승인 콜백 함수 생성"""
+    
+    def surge_approval_callback(stock_code: str, stock_name: str, surge_info: dict) -> bool:
+        """
+        급등주 매수 승인 요청
+        
+        Args:
+            stock_code: 종목 코드
+            stock_name: 종목명
+            surge_info: 급등 정보 {'price', 'change_rate', 'volume_ratio'}
+        
+        Returns:
+            승인 여부
+        """
+        try:
+            # 급등 정보 출력
+            print("\n" + "=" * 70)
+            print("🚀 급등주 감지!")
+            print("=" * 70)
+            print(f"종목명:      {stock_name} ({stock_code})")
+            print(f"현재가:      {surge_info['price']:,}원")
+            print(f"상승률:      {surge_info['change_rate']:+.2f}%")
+            print(f"거래량 비율: {surge_info['volume_ratio']:.2f}배")
+            print("=" * 70)
+            
+            # 사용자 입력 (타임아웃 30초)
+            print("이 종목을 관심 종목에 추가하고 매수하시겠습니까?")
+            print("승인: y/yes | 거부: n/no | 시간 제한: 30초")
+            print("-" * 70)
+            
+            # 타임아웃을 위한 이벤트
+            user_input = [None]
+            input_event = threading.Event()
+            
+            def get_input():
+                try:
+                    user_input[0] = input("선택 (y/n): ").strip().lower()
+                    input_event.set()
+                except Exception as e:
+                    log.error(f"입력 오류: {e}")
+                    input_event.set()
+            
+            # 입력 스레드 시작
+            input_thread = threading.Thread(target=get_input, daemon=True)
+            input_thread.start()
+            
+            # 30초 대기
+            if input_event.wait(timeout=30):
+                # 사용자가 입력함
+                response = user_input[0]
+                if response in ['y', 'yes']:
+                    log.success(f"✅ 급등주 매수 승인: {stock_name}")
+                    return True
+                else:
+                    log.info(f"❌ 급등주 매수 거부: {stock_name}")
+                    return False
+            else:
+                # 타임아웃
+                log.warning(f"⏱️  시간 초과 (30초) - 급등주 매수 자동 거부: {stock_name}")
+                return False
+                
+        except Exception as e:
+            log.error(f"승인 콜백 오류: {e}")
+            return False
+    
+    return surge_approval_callback
 
 
 def main():
@@ -110,12 +180,20 @@ def main():
         
         log.success("✅ 엔진 초기화 완료!")
         
+        # 급등주 승인 콜백 설정
+        if Config.ENABLE_SURGE_DETECTION and engine.surge_detector:
+            surge_callback = create_surge_approval_callback()
+            engine.set_surge_approval_callback(surge_callback)
+            log.info("급등주 승인 콜백 등록 완료")
+        
         # 안내 메시지
         print("\n" + "=" * 60)
         print("자동매매가 시작됩니다.")
         print("=" * 60)
         print("📊 실시간 시세를 모니터링하고 매매 신호를 생성합니다.")
         print("🤖 신호 발생 시 자동으로 주문을 전송합니다.")
+        if Config.ENABLE_SURGE_DETECTION:
+            print("🚀 급등주를 자동으로 감지하여 승인을 요청합니다.")
         print("⚠️  Ctrl+C를 눌러 언제든지 중지할 수 있습니다.")
         print("=" * 60)
         print()

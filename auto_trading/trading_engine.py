@@ -37,15 +37,17 @@ engine.initialize()
 engine.start_trading()
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable
 from datetime import datetime, time as dt_time
 import time
 from collections import defaultdict
+import threading
 
 from kiwoom_api import KiwoomAPI
 from strategies import MultiStrategy, SignalType, create_default_strategies
 from risk_manager import RiskManager
 from indicators import calculate_all_indicators
+from surge_detector import SurgeDetector
 from logger import log
 from config import Config
 
@@ -69,11 +71,16 @@ class TradingEngine:
         
         # 실행 상태
         self.is_running = False
-        self.watch_list = Config.WATCH_LIST
+        self.watch_list = Config.WATCH_LIST.copy()  # 복사본 사용 (동적 추가 가능)
         
         # 통계
         self.last_check_time = {}
         self.signal_count = 0
+        
+        # 급등주 감지기
+        self.surge_detector: Optional[SurgeDetector] = None
+        self.surge_approval_callback: Optional[Callable] = None
+        self.surge_detected_stocks = set()  # 이미 추가된 급등주 추적
         
         log.info("자동매매 엔진 초기화 완료")
     
@@ -118,9 +125,22 @@ class TradingEngine:
                     holding['buy_price']
                 )
             
-            # 3. 실시간 시세 등록
+            # 3. 실시간 시세 등록 (관심 종목)
             self.kiwoom.set_real_data_callback(self.on_price_update)
             self.kiwoom.register_real_data(self.watch_list)
+            
+            # 4. 급등주 감지기 초기화 (옵션)
+            if Config.ENABLE_SURGE_DETECTION:
+                log.info("급등주 감지 기능 활성화 중...")
+                self.surge_detector = SurgeDetector(
+                    self.kiwoom,
+                    self.on_surge_detected
+                )
+                if self.surge_detector.initialize():
+                    log.success("급등주 감지 기능 활성화 완료")
+                else:
+                    log.warning("급등주 감지 기능 초기화 실패 - 기능 비활성화")
+                    self.surge_detector = None
             
             log.success("자동매매 엔진 초기화 완료")
             return True
@@ -128,6 +148,16 @@ class TradingEngine:
         except Exception as e:
             log.error(f"엔진 초기화 중 오류: {e}")
             return False
+    
+    def set_surge_approval_callback(self, callback: Callable):
+        """
+        급등주 승인 콜백 설정
+        
+        Args:
+            callback: 승인 요청 콜백 함수 (stock_code, stock_name, surge_info) -> bool
+        """
+        self.surge_approval_callback = callback
+        log.info("급등주 승인 콜백 설정 완료")
     
     def start_trading(self):
         """자동매매 시작"""
@@ -138,6 +168,10 @@ class TradingEngine:
         self.is_running = True
         log.success("🚀 자동매매 시작!")
         log.info(f"관심 종목: {', '.join(self.watch_list)}")
+        
+        # 급등주 모니터링 시작
+        if self.surge_detector:
+            self.surge_detector.start_monitoring()
         
         # 현재 상태 출력
         self.risk_manager.print_status()
@@ -177,10 +211,19 @@ class TradingEngine:
     def stop_trading(self):
         """자동매매 중지"""
         self.is_running = False
+        
+        # 급등주 모니터링 중지
+        if self.surge_detector:
+            self.surge_detector.stop_monitoring()
+        
         log.info("🛑 자동매매 중지")
         
         # 최종 통계 출력
         self.risk_manager.print_status()
+        
+        # 급등주 통계 출력
+        if self.surge_detector:
+            self.surge_detector.print_status()
     
     def is_market_open(self) -> bool:
         """
@@ -215,6 +258,14 @@ class TradingEngine:
         
         try:
             current_price = price_data['current_price']
+            
+            # 급등주 감지기에 데이터 전달
+            if self.surge_detector and self.surge_detector.is_monitoring:
+                self.surge_detector.on_price_update(stock_code, price_data)
+            
+            # 관심 종목이 아니면 매매 신호 생성 안 함
+            if stock_code not in self.watch_list:
+                return
             
             # 가격 히스토리 업데이트
             self.price_history[stock_code].append(current_price)
@@ -452,6 +503,86 @@ class TradingEngine:
         except Exception as e:
             log.error(f"청산 실행 중 오류: {e}")
     
+    def on_surge_detected(self, stock_code: str, candidate):
+        """
+        급등주 감지 콜백
+        
+        Args:
+            stock_code: 종목 코드
+            candidate: SurgeCandidate 객체
+        """
+        try:
+            # 이미 추가된 종목은 무시
+            if stock_code in self.surge_detected_stocks:
+                log.debug(f"이미 추가된 급등주: {candidate.name} ({stock_code})")
+                return
+            
+            # 이미 관심 종목에 있으면 무시
+            if stock_code in self.watch_list:
+                log.debug(f"이미 관심 종목: {candidate.name} ({stock_code})")
+                return
+            
+            # 승인 콜백이 설정되지 않았으면 자동 추가
+            if not self.surge_approval_callback:
+                log.warning("급등주 승인 콜백이 설정되지 않았습니다. 자동으로 추가합니다.")
+                self.add_surge_stock(stock_code, candidate)
+                return
+            
+            # 승인 요청
+            surge_info = {
+                'name': candidate.name,
+                'price': candidate.current_price,
+                'change_rate': candidate.current_change_rate,
+                'volume_ratio': candidate.get_volume_ratio()
+            }
+            
+            # 콜백 호출 (별도 스레드에서)
+            def request_approval():
+                try:
+                    approved = self.surge_approval_callback(stock_code, candidate.name, surge_info)
+                    if approved:
+                        self.add_surge_stock(stock_code, candidate)
+                    else:
+                        log.info(f"급등주 매수 거부: {candidate.name} ({stock_code})")
+                except Exception as e:
+                    log.error(f"급등주 승인 처리 중 오류: {e}")
+            
+            # 별도 스레드에서 승인 요청 (메인 루프 블로킹 방지)
+            approval_thread = threading.Thread(target=request_approval, daemon=True)
+            approval_thread.start()
+            
+        except Exception as e:
+            log.error(f"급등주 감지 콜백 처리 중 오류: {e}")
+    
+    def add_surge_stock(self, stock_code: str, candidate):
+        """
+        급등주를 관심 종목에 추가
+        
+        Args:
+            stock_code: 종목 코드
+            candidate: SurgeCandidate 객체
+        """
+        try:
+            # 관심 종목에 추가
+            if stock_code not in self.watch_list:
+                self.watch_list.append(stock_code)
+                log.success(
+                    f"✅ 급등주 추가: {candidate.name} ({stock_code}) | "
+                    f"상승률: {candidate.current_change_rate:+.2f}% | "
+                    f"거래량: {candidate.get_volume_ratio():.2f}배"
+                )
+                
+                # 실시간 시세 등록
+                self.kiwoom.register_real_data([stock_code])
+                
+                # 추가 완료 기록
+                self.surge_detected_stocks.add(stock_code)
+                
+                log.info(f"현재 관심 종목 수: {len(self.watch_list)}개")
+            
+        except Exception as e:
+            log.error(f"급등주 추가 중 오류: {e}")
+    
     def get_status(self) -> Dict:
         """
         현재 상태 반환
@@ -461,13 +592,20 @@ class TradingEngine:
         """
         stats = self.risk_manager.get_statistics()
         
-        return {
+        status = {
             'is_running': self.is_running,
             'watch_list': self.watch_list,
             'signal_count': self.signal_count,
             'positions': len(self.risk_manager.positions),
             'statistics': stats
         }
+        
+        # 급등주 감지 통계 추가
+        if self.surge_detector:
+            status['surge_detection'] = self.surge_detector.get_statistics()
+            status['surge_detected_stocks'] = list(self.surge_detected_stocks)
+        
+        return status
 
 
 # 테스트 코드

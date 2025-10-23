@@ -66,6 +66,13 @@ class Config:
     # 통합 전략 설정
     MIN_SIGNAL_STRENGTH = int(os.getenv('MIN_SIGNAL_STRENGTH', '2'))
     
+    # 급등주 감지 설정
+    ENABLE_SURGE_DETECTION = os.getenv('ENABLE_SURGE_DETECTION', 'True').lower() == 'true'
+    SURGE_CANDIDATE_COUNT = int(os.getenv('SURGE_CANDIDATE_COUNT', '100'))
+    SURGE_MIN_CHANGE_RATE = float(os.getenv('SURGE_MIN_CHANGE_RATE', '5.0'))
+    SURGE_MIN_VOLUME_RATIO = float(os.getenv('SURGE_MIN_VOLUME_RATIO', '2.0'))
+    SURGE_COOLDOWN_MINUTES = int(os.getenv('SURGE_COOLDOWN_MINUTES', '30'))
+    
     # 로깅 설정
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
     LOG_FILE_PATH = os.getenv('LOG_FILE_PATH', 'logs/trading.log')
@@ -120,6 +127,13 @@ class Config:
         print(f"  RSI: 기간 {cls.RSI_PERIOD}일, 과매도 {cls.RSI_OVERSOLD}, 과매수 {cls.RSI_OVERBOUGHT}")
         print(f"  MACD: 빠른선 {cls.MACD_FAST}, 느린선 {cls.MACD_SLOW}, 시그널 {cls.MACD_SIGNAL}")
         print(f"  최소 신호 강도: {cls.MIN_SIGNAL_STRENGTH}/3")
+        print(f"\n급등주 감지:")
+        print(f"  급등주 감지: {'활성화' if cls.ENABLE_SURGE_DETECTION else '비활성화'}")
+        if cls.ENABLE_SURGE_DETECTION:
+            print(f"  후보 종목 수: {cls.SURGE_CANDIDATE_COUNT}개")
+            print(f"  최소 상승률: {cls.SURGE_MIN_CHANGE_RATE}%")
+            print(f"  최소 거래량 비율: {cls.SURGE_MIN_VOLUME_RATIO}배")
+            print(f"  재감지 대기시간: {cls.SURGE_COOLDOWN_MINUTES}분")
         print("=" * 60)
 
 
