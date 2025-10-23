@@ -68,6 +68,7 @@ class Config:
     
     # 급등주 감지 설정
     ENABLE_SURGE_DETECTION = os.getenv('ENABLE_SURGE_DETECTION', 'True').lower() == 'true'
+    SURGE_AUTO_APPROVE = os.getenv('SURGE_AUTO_APPROVE', 'False').lower() == 'true'
     SURGE_CANDIDATE_COUNT = int(os.getenv('SURGE_CANDIDATE_COUNT', '100'))
     SURGE_MIN_CHANGE_RATE = float(os.getenv('SURGE_MIN_CHANGE_RATE', '5.0'))
     SURGE_MIN_VOLUME_RATIO = float(os.getenv('SURGE_MIN_VOLUME_RATIO', '2.0'))
@@ -130,6 +131,7 @@ class Config:
         print(f"\n급등주 감지:")
         print(f"  급등주 감지: {'활성화' if cls.ENABLE_SURGE_DETECTION else '비활성화'}")
         if cls.ENABLE_SURGE_DETECTION:
+            print(f"  자동 승인: {'활성화' if cls.SURGE_AUTO_APPROVE else '수동 승인 필요'}")
             print(f"  후보 종목 수: {cls.SURGE_CANDIDATE_COUNT}개")
             print(f"  최소 상승률: {cls.SURGE_MIN_CHANGE_RATE}%")
             print(f"  최소 거래량 비율: {cls.SURGE_MIN_VOLUME_RATIO}배")

@@ -67,7 +67,14 @@ def create_surge_approval_callback():
             print(f"거래량 비율: {surge_info['volume_ratio']:.2f}배")
             print("=" * 70)
             
-            # 사용자 입력 (타임아웃 30초)
+            # 자동 승인 모드 확인
+            if Config.SURGE_AUTO_APPROVE:
+                log.success(f"✅ 급등주 자동 승인: {stock_name}")
+                print("⚡ 자동 승인 모드: 즉시 매수 진행")
+                print("=" * 70)
+                return True
+            
+            # 수동 승인 모드: 사용자 입력 (타임아웃 30초)
             print("이 종목을 관심 종목에 추가하고 매수하시겠습니까?")
             print("승인: y/yes | 거부: n/no | 시간 제한: 30초")
             print("-" * 70)
@@ -141,6 +148,11 @@ def main():
         log.critical("⚠️⚠️⚠️  실계좌 모드로 실행합니다! ⚠️⚠️⚠️")
         log.critical("실제 자금이 투자됩니다. 신중하게 사용하세요!")
         
+        # 급등주 자동 승인 추가 경고
+        if Config.ENABLE_SURGE_DETECTION and Config.SURGE_AUTO_APPROVE:
+            log.critical("🔥 급등주 자동 승인이 활성화되어 있습니다!")
+            log.critical("감지된 모든 급등주를 자동으로 매수합니다!")
+        
         # 실계좌 확인
         response = input("\n정말 실계좌로 진행하시겠습니까? (yes 입력): ")
         if response.lower() != 'yes':
@@ -193,7 +205,11 @@ def main():
         print("📊 실시간 시세를 모니터링하고 매매 신호를 생성합니다.")
         print("🤖 신호 발생 시 자동으로 주문을 전송합니다.")
         if Config.ENABLE_SURGE_DETECTION:
-            print("🚀 급등주를 자동으로 감지하여 승인을 요청합니다.")
+            if Config.SURGE_AUTO_APPROVE:
+                print("🚀 급등주를 자동으로 감지하여 즉시 매수합니다. (자동 승인)")
+                print("⚠️  모든 급등주가 자동으로 매수됩니다!")
+            else:
+                print("🚀 급등주를 자동으로 감지하여 승인을 요청합니다. (수동 승인)")
         print("⚠️  Ctrl+C를 눌러 언제든지 중지할 수 있습니다.")
         print("=" * 60)
         print()
