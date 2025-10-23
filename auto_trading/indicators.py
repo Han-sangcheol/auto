@@ -24,7 +24,6 @@ rsi = calculate_rsi(prices, 14)
 """
 
 import numpy as np
-import pandas as pd
 from typing import List, Tuple, Optional
 
 
@@ -59,10 +58,15 @@ def calculate_ema(prices: List[float], period: int) -> Optional[float]:
     if len(prices) < period:
         return None
     
-    # pandas를 사용한 EMA 계산
-    series = pd.Series(prices)
-    ema = series.ewm(span=period, adjust=False).mean()
-    return ema.iloc[-1]
+    # numpy를 사용한 EMA 계산
+    prices_array = np.array(prices)
+    multiplier = 2 / (period + 1)
+    ema = prices_array[0]  # 첫 값으로 초기화
+    
+    for price in prices_array[1:]:
+        ema = (price * multiplier) + (ema * (1 - multiplier))
+    
+    return float(ema)
 
 
 def calculate_rsi(prices: List[float], period: int = 14) -> Optional[float]:
@@ -122,26 +126,35 @@ def calculate_macd(
     if len(prices) < slow + signal:
         return None
     
-    # pandas Series로 변환
-    series = pd.Series(prices)
+    # numpy 배열로 변환
+    prices_array = np.array(prices)
+    
+    # EMA 계산 함수 (내부 헬퍼)
+    def calc_ema_array(data, span):
+        multiplier = 2 / (span + 1)
+        ema = np.zeros_like(data)
+        ema[0] = data[0]
+        for i in range(1, len(data)):
+            ema[i] = (data[i] * multiplier) + (ema[i-1] * (1 - multiplier))
+        return ema
     
     # EMA 계산
-    ema_fast = series.ewm(span=fast, adjust=False).mean()
-    ema_slow = series.ewm(span=slow, adjust=False).mean()
+    ema_fast = calc_ema_array(prices_array, fast)
+    ema_slow = calc_ema_array(prices_array, slow)
     
     # MACD선 계산
     macd_line = ema_fast - ema_slow
     
     # 시그널선 계산
-    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    signal_line = calc_ema_array(macd_line, signal)
     
     # 히스토그램 계산
     histogram = macd_line - signal_line
     
     return (
-        macd_line.iloc[-1],
-        signal_line.iloc[-1],
-        histogram.iloc[-1]
+        float(macd_line[-1]),
+        float(signal_line[-1]),
+        float(histogram[-1])
     )
 
 

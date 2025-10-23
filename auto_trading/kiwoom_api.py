@@ -156,16 +156,19 @@ class KiwoomAPI:
                 "계좌번호",
                 self.account_number
             )
-            self.ocx.dynamicCall(
-                "SetInputValue(QString, QString)",
-                "비밀번호",
-                Config.KIWOOM_ACCOUNT_PASSWORD
-            )
-            self.ocx.dynamicCall(
-                "SetInputValue(QString, QString)",
-                "비밀번호입력매체구분",
-                "00"
-            )
+            
+            # 모의투자는 비밀번호 관련 필드 모두 생략
+            if not Config.USE_SIMULATION:
+                self.ocx.dynamicCall(
+                    "SetInputValue(QString, QString)",
+                    "비밀번호",
+                    Config.KIWOOM_ACCOUNT_PASSWORD
+                )
+                self.ocx.dynamicCall(
+                    "SetInputValue(QString, QString)",
+                    "비밀번호입력매체구분",
+                    "00"
+                )
             self.ocx.dynamicCall(
                 "SetInputValue(QString, QString)",
                 "조회구분",
@@ -208,16 +211,19 @@ class KiwoomAPI:
                 "계좌번호",
                 self.account_number
             )
-            self.ocx.dynamicCall(
-                "SetInputValue(QString, QString)",
-                "비밀번호",
-                Config.KIWOOM_ACCOUNT_PASSWORD
-            )
-            self.ocx.dynamicCall(
-                "SetInputValue(QString, QString)",
-                "비밀번호입력매체구분",
-                "00"
-            )
+            
+            # 모의투자는 비밀번호 관련 필드 모두 생략
+            if not Config.USE_SIMULATION:
+                self.ocx.dynamicCall(
+                    "SetInputValue(QString, QString)",
+                    "비밀번호",
+                    Config.KIWOOM_ACCOUNT_PASSWORD
+                )
+                self.ocx.dynamicCall(
+                    "SetInputValue(QString, QString)",
+                    "비밀번호입력매체구분",
+                    "00"
+                )
             self.ocx.dynamicCall(
                 "SetInputValue(QString, QString)",
                 "조회구분",

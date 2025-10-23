@@ -1,6 +1,10 @@
 # Automated Python 32-bit Setup Script for Kiwoom API
 # This script sets up an isolated Python 32-bit environment
 
+param(
+    [switch]$Automated = $false
+)
+
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "   Python 32-bit Isolated Setup" -ForegroundColor Cyan
@@ -24,7 +28,9 @@ if (-not (Test-Path $python32Path)) {
     Write-Host ""
     Write-Host "See detailed guide: SETUP_ISOLATED_PYTHON.md" -ForegroundColor Cyan
     Write-Host ""
-    Read-Host "Press Enter to exit"
+    if (-not $Automated) {
+        Read-Host "Press Enter to exit"
+    }
     exit 1
 }
 
@@ -40,7 +46,9 @@ if ($bitCheck -match "32") {
 } else {
     Write-Host "[ERROR] Python at C:\Python32\ is 64-bit!" -ForegroundColor Red
     Write-Host "Please install 32-bit Python to C:\Python32\" -ForegroundColor Yellow
-    Read-Host "Press Enter to exit"
+    if (-not $Automated) {
+        Read-Host "Press Enter to exit"
+    }
     exit 1
 }
 
@@ -55,13 +63,19 @@ Write-Host "Step 3: Cleaning old virtual environment..." -ForegroundColor Yellow
 if (Test-Path ".venv") {
     Write-Host "Old virtual environment found. Removing..." -ForegroundColor Yellow
     
-    $confirm = Read-Host "Delete old .venv folder? (yes/no)"
-    if ($confirm -eq "yes") {
+    if (-not $Automated) {
+        $confirm = Read-Host "Delete old .venv folder? (yes/no)"
+        if ($confirm -eq "yes") {
+            Remove-Item -Recurse -Force .venv
+            Write-Host "[Done] Old environment removed" -ForegroundColor Green
+        } else {
+            Write-Host "[Skipped] Keeping old environment" -ForegroundColor Yellow
+            Write-Host "Warning: This may cause issues if it's 64-bit" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "Automated mode: Removing old environment automatically" -ForegroundColor Yellow
         Remove-Item -Recurse -Force .venv
         Write-Host "[Done] Old environment removed" -ForegroundColor Green
-    } else {
-        Write-Host "[Skipped] Keeping old environment" -ForegroundColor Yellow
-        Write-Host "Warning: This may cause issues if it's 64-bit" -ForegroundColor Yellow
     }
 } else {
     Write-Host "[OK] No old environment found" -ForegroundColor Green
@@ -77,7 +91,9 @@ Write-Host ""
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] Failed to create virtual environment" -ForegroundColor Red
-    Read-Host "Press Enter to exit"
+    if (-not $Automated) {
+        Read-Host "Press Enter to exit"
+    }
     exit 1
 }
 
@@ -93,7 +109,9 @@ if ($venvBitCheck -match "32") {
 } else {
     Write-Host "[ERROR] Virtual environment is still 64-bit!" -ForegroundColor Red
     Write-Host "Something went wrong. Please check the setup." -ForegroundColor Yellow
-    Read-Host "Press Enter to exit"
+    if (-not $Automated) {
+        Read-Host "Press Enter to exit"
+    }
     exit 1
 }
 Write-Host ""
@@ -114,7 +132,9 @@ if (Test-Path "requirements.txt") {
     
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERROR] Package installation failed" -ForegroundColor Red
-        Read-Host "Press Enter to exit"
+        if (-not $Automated) {
+            Read-Host "Press Enter to exit"
+        }
         exit 1
     }
     
@@ -171,5 +191,7 @@ Write-Host ""
 Write-Host "Your system Python 64-bit is unaffected!" -ForegroundColor Green
 Write-Host ""
 
-Read-Host "Press Enter to exit"
+if (-not $Automated) {
+    Read-Host "Press Enter to exit"
+}
 

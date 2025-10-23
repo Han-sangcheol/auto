@@ -64,49 +64,69 @@
 
 ## 빠른 시작 (요약)
 
+### 🚀 원클릭 자동 설치 (권장)
+
+PowerShell 관리자 권한으로:
+```powershell
+.\auto_setup_complete.ps1
+```
+→ Python 32비트 다운로드 + 설치 + 환경 구성 모두 자동!
+
+자세한 내용: **[QUICK_INSTALL.md](QUICK_INSTALL.md)**
+
+### 📝 단계별 설치
+
 ```bash
 # 0. Python 32비트 설치 (처음 1회만) ⚠️ 필수
-# 자동 설정: .\setup_python32.ps1
-# 수동 가이드: SETUP_ISOLATED_PYTHON.md
+.\install_python32.ps1           # 자동 다운로드 + 설치
+# 또는
+.\setup_python32.ps1             # 이미 설치된 경우
+# 또는
+SETUP_ISOLATED_PYTHON.md 참고   # 수동 설치 가이드
 
 # 1. 설치 스크립트 실행 (처음 1회만)
-setup.ps1     # PowerShell (권장)
-setup.bat     # CMD
+.\setup.ps1     # PowerShell (권장)
+setup.bat       # CMD
 
 # 2. .env 파일 설정
 # 계좌번호, 비밀번호, 관심 종목 입력
 
 # 3. 프로그램 실행
-start.ps1     # PowerShell (권장)
-start.bat     # CMD
+.\start.ps1     # PowerShell (권장)
+start.bat       # CMD
 ```
 
 ## 프로젝트 구조
 
 ```
 auto_trading/
-├── README.md              # 이 문서
-├── GETTING_STARTED.md     # 완전 설치 가이드
-├── QUICKSTART.md          # 빠른 시작
-├── KIWOOM_API_SETUP.md    # 키움 API 가이드
-├── STRATEGY_GUIDE.md      # 전략 설명
-├── FAQ.md                 # 자주 묻는 질문
-├── TROUBLESHOOTING.md     # 문제 해결
-├── .env.example           # 설정 템플릿
-├── setup.ps1              # 설치 스크립트 (PowerShell)
-├── setup.bat              # 설치 스크립트 (CMD)
-├── start.ps1              # 실행 스크립트 (PowerShell)
-├── start.bat              # 실행 스크립트 (CMD)
-├── requirements.txt       # 패키지 목록
-├── main.py                # 프로그램 진입점
-├── config.py              # 설정 관리
-├── kiwoom_api.py          # 키움 API 래퍼
-├── indicators.py          # 기술적 지표
-├── strategies.py          # 매매 전략
-├── risk_manager.py        # 리스크 관리
-├── trading_engine.py      # 자동매매 엔진
-├── logger.py              # 로깅 시스템
-└── logs/                  # 로그 파일
+├── README.md                    # 이 문서
+├── QUICK_INSTALL.md             # 빠른 설치 가이드 ⭐ NEW
+├── GETTING_STARTED.md           # 완전 설치 가이드
+├── QUICKSTART.md                # 빠른 시작
+├── KIWOOM_API_SETUP.md          # 키움 API 가이드
+├── SETUP_ISOLATED_PYTHON.md     # Python 32비트 독립 설치 가이드 ⭐ NEW
+├── STRATEGY_GUIDE.md            # 전략 설명
+├── FAQ.md                       # 자주 묻는 질문
+├── TROUBLESHOOTING.md           # 문제 해결
+├── .env.example                 # 설정 템플릿
+├── auto_setup_complete.ps1      # 완전 자동 설치 스크립트 ⭐ NEW
+├── install_python32.ps1         # Python 32비트 자동 설치 ⭐ NEW
+├── setup_python32.ps1           # Python 32비트 환경 구성 ⭐ NEW
+├── setup.ps1                    # 설치 스크립트 (PowerShell)
+├── setup.bat                    # 설치 스크립트 (CMD)
+├── start.ps1                    # 실행 스크립트 (PowerShell)
+├── start.bat                    # 실행 스크립트 (CMD)
+├── requirements.txt             # 패키지 목록
+├── main.py                      # 프로그램 진입점
+├── config.py                    # 설정 관리
+├── kiwoom_api.py                # 키움 API 래퍼
+├── indicators.py                # 기술적 지표
+├── strategies.py                # 매매 전략
+├── risk_manager.py              # 리스크 관리
+├── trading_engine.py            # 자동매매 엔진
+├── logger.py                    # 로깅 시스템
+└── logs/                        # 로그 파일
 ```
 
 ## 주의사항

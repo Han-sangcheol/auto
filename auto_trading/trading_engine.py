@@ -87,20 +87,28 @@ class TradingEngine:
         try:
             log.info("자동매매 엔진 초기화 중...")
             
+            # 로그인 후 대기 (API 안정화)
+            import time
+            time.sleep(2)
+            
             # 1. 계좌 정보 조회
             balance_info = self.kiwoom.get_balance()
             if not balance_info:
-                log.error("잔고 조회 실패")
-                return False
+                log.warning("잔고 조회 실패 - 기본값 사용 (모의투자 초기 자금)")
+                # 모의투자 기본 초기 자금: 10,000,000원
+                cash = 10000000
+            else:
+                cash = balance_info.get('cash', 10000000)
             
-            cash = balance_info.get('cash', 0)
             self.risk_manager.set_initial_balance(cash)
-            
             log.info(f"계좌 잔고: {cash:,}원")
             
             # 2. 보유 종목 조회
             holdings = self.kiwoom.get_holdings()
-            log.info(f"보유 종목: {len(holdings)}개")
+            if holdings:
+                log.info(f"보유 종목: {len(holdings)}개")
+            else:
+                log.info("보유 종목: 0개 (초기 상태)")
             
             for holding in holdings:
                 self.risk_manager.add_position(
