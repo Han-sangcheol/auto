@@ -116,4 +116,15 @@ class APIClient:
         )
         response.raise_for_status()
         return response.json()
+    
+    # 로그 API
+    def get_logs(self, limit: int = 1000, level: Optional[str] = None) -> List[dict]:
+        """로그 조회"""
+        params = {"limit": limit}
+        if level:
+            params["level"] = level
+        
+        response = self.session.get(f"{self.api_v1}/logs", params=params)
+        response.raise_for_status()
+        return response.json()
 

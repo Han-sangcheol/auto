@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon
+from ..services.websocket_manager import WebSocketManager
 
 
 class MainWindow(QMainWindow):
@@ -21,8 +22,15 @@ class MainWindow(QMainWindow):
         self.api_client = api_client
         self.current_account_id = 1  # TODO: 로그인 후 설정
         
+        # WebSocket Manager 초기화
+        self.ws_manager = WebSocketManager()
+        self.setup_websocket_handlers()
+        
         self.setup_ui()
         self.load_initial_data()
+        
+        # WebSocket 연결 시작
+        self.ws_manager.start()
     
     def setup_ui(self):
         """UI 초기화"""
@@ -81,34 +89,34 @@ class MainWindow(QMainWindow):
     def create_tabs(self):
         """탭 생성"""
         # 대시보드 탭
-        dashboard_tab = QWidget()
-        dashboard_layout = QVBoxLayout(dashboard_tab)
-        dashboard_layout.addWidget(QLabel("대시보드 (개발 중)", alignment=Qt.AlignCenter))
-        self.tabs.addTab(dashboard_tab, "대시보드")
+        from .dashboard_view import DashboardView
+        dashboard_view = DashboardView(self.api_client)
+        self.tabs.addTab(dashboard_view, "📊 대시보드")
         
         # 매매 탭
-        trading_tab = QWidget()
-        trading_layout = QVBoxLayout(trading_tab)
-        trading_layout.addWidget(QLabel("매매 화면 (개발 중)", alignment=Qt.AlignCenter))
-        self.tabs.addTab(trading_tab, "매매")
+        from .trading_view import TradingView
+        trading_view = TradingView(self.api_client)
+        self.tabs.addTab(trading_view, "💰 매매")
         
         # 차트 탭
-        chart_tab = QWidget()
-        chart_layout = QVBoxLayout(chart_tab)
-        chart_layout.addWidget(QLabel("차트 (개발 중)", alignment=Qt.AlignCenter))
-        self.tabs.addTab(chart_tab, "차트")
+        from .chart_view import ChartView
+        chart_view = ChartView(self.api_client)
+        self.tabs.addTab(chart_view, "📈 차트")
         
         # 급등주 탭
-        surge_tab = QWidget()
-        surge_layout = QVBoxLayout(surge_tab)
-        surge_layout.addWidget(QLabel("급등주 모니터 (개발 중)", alignment=Qt.AlignCenter))
-        self.tabs.addTab(surge_tab, "급등주")
+        from .surge_monitor_view import SurgeMonitorView
+        surge_view = SurgeMonitorView(self.api_client)
+        self.tabs.addTab(surge_view, "🚀 급등주")
         
         # 설정 탭
-        settings_tab = QWidget()
-        settings_layout = QVBoxLayout(settings_tab)
-        settings_layout.addWidget(QLabel("설정 (개발 중)", alignment=Qt.AlignCenter))
-        self.tabs.addTab(settings_tab, "설정")
+        from .settings_view import SettingsView
+        settings_view = SettingsView(self.api_client)
+        self.tabs.addTab(settings_view, "⚙️ 설정")
+        
+        # 로그 탭
+        from .logs_view import LogsView
+        logs_view = LogsView(self.api_client)
+        self.tabs.addTab(logs_view, "📝 로그")
     
     def apply_stylesheet(self):
         """스타일시트 적용"""
@@ -149,4 +157,47 @@ class MainWindow(QMainWindow):
         
         except Exception as e:
             self.status_bar.showMessage(f"데이터 로드 실패: {str(e)}")
+    
+    def setup_websocket_handlers(self):
+        """WebSocket 핸들러 설정"""
+        # 실시간 시세 데이터
+        self.ws_manager.market_data_received.connect(self.on_market_data)
+        
+        # 주문 업데이트
+        self.ws_manager.order_update_received.connect(self.on_order_update)
+        
+        # 포지션 업데이트
+        self.ws_manager.position_update_received.connect(self.on_position_update)
+        
+        # 급등주 알림
+        self.ws_manager.surge_alert_received.connect(self.on_surge_alert)
+    
+    def on_market_data(self, data: dict):
+        """실시간 시세 데이터 처리"""
+        stock_code = data.get('stock_code')
+        price = data.get('price')
+        self.status_bar.showMessage(f"📈 {stock_code}: {price:,}원", 3000)
+    
+    def on_order_update(self, data: dict):
+        """주문 업데이트 처리"""
+        order_id = data.get('order_id')
+        status = data.get('status')
+        self.status_bar.showMessage(f"📋 주문 #{order_id}: {status}", 5000)
+    
+    def on_position_update(self, data: dict):
+        """포지션 업데이트 처리"""
+        stock_code = data.get('stock_code')
+        quantity = data.get('quantity')
+        self.status_bar.showMessage(f"💼 포지션 업데이트: {stock_code} {quantity}주", 5000)
+    
+    def on_surge_alert(self, data: dict):
+        """급등주 알림 처리"""
+        stock_code = data.get('stock_code')
+        change_rate = data.get('change_rate', 0)
+        self.status_bar.showMessage(f"🚀 급등주 감지: {stock_code} (+{change_rate:.2f}%)", 10000)
+    
+    def closeEvent(self, event):
+        """종료 시 WebSocket 정리"""
+        self.ws_manager.stop()
+        event.accept()
 
