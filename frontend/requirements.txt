@@ -1,0 +1,22 @@
+# PySide6 및 GUI
+PySide6==6.6.1
+PySide6-Addons==6.6.1
+
+# 차트 및 그래프
+pyqtgraph==0.13.3
+matplotlib==3.8.2
+
+# HTTP 클라이언트
+aiohttp==3.9.1
+requests==2.31.0
+websockets==12.0
+
+# 데이터 처리
+pandas==2.1.4
+numpy==1.26.2
+
+# 유틸리티
+python-dotenv==1.0.0
+python-dateutil==2.8.2
+pytz==2023.3
+

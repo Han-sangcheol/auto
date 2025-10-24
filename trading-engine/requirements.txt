@@ -1,0 +1,19 @@
+# Trading Engine 요구사항 (32-bit Python 전용)
+
+# 키움 OpenAPI (COM 객체)
+PyQt5==5.15.10
+
+# 데이터 처리
+pandas==2.1.4
+numpy==1.26.2
+
+# HTTP 클라이언트
+requests==2.31.0
+
+# 설정 및 유틸리티
+python-dotenv==1.0.0
+loguru==0.7.2
+
+# Redis (옵션)
+redis==5.0.1
+

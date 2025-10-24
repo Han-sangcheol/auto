@@ -3,7 +3,7 @@
 ## 🎯 프로젝트 개요
 콘솔 기반 자동매매 시스템을 PySide6 GUI, FastAPI 백엔드, PostgreSQL/Redis를 갖춘 엔터프라이즈급 플랫폼으로 전환
 
-## ✅ Phase 1: 프로젝트 초기 설정 (진행 중)
+## ✅ Phase 1: 프로젝트 초기 설정 (완료)
 
 ### 완료된 작업
 
@@ -71,7 +71,7 @@ file 작성
 - [x] scripts/start_backend.bat
 - [x] scripts/start_backend.ps1
 
-### 남은 작업 (Phase 1)
+### 완료된 작업 (Phase 1 - 마무리)
 
 #### Backend
 - [x] Repository 패턴 구현 ✅
@@ -84,23 +84,63 @@ file 작성
   - account.py (계좌 API)
   - trading.py (매매 API)
   - market.py (시세 API)
-- [ ] WebSocket 엔드포인트 기본 구조
+- [x] WebSocket 엔드포인트 기본 구조 ✅
 
-#### Frontend
-- [ ] PySide6 프로젝트 초기화
-- [ ] 기본 구조 생성
+## ✅ Phase 2: 백엔드 API 개발 (완료)
 
-#### Trading Engine
-- [ ] 디렉토리 구조 생성
-- [ ] 기본 설정 파일
+### 완료된 작업
 
-## 📋 Phase 2-6 (예정)
+#### Backend WebSocket
+- [x] WebSocket 엔드포인트 구현 ✅
+  - `/ws/market` - 실시간 시세
+  - `/ws/orders` - 주문 체결
+  - `/ws/positions` - 포지션 업데이트
+  - `/ws/surge` - 급등주 알림
+- [x] ConnectionManager 클래스 ✅
+- [x] 브로드캐스트 헬퍼 함수 ✅
+- [x] 연결 통계 API ✅
 
-### Phase 2: 백엔드 API 개발
-- Repository 패턴 완성
-- 모든 REST API 엔드포인트 구현
-- WebSocket 실시간 통신
-- 인증 시스템
+#### Frontend 초기화
+- [x] PySide6 프로젝트 초기화 ✅
+  - main.py (진입점)
+  - requirements.txt
+  - .env.example
+- [x] 기본 구조 생성 ✅
+  - views/ (화면 컴포넌트)
+  - widgets/ (재사용 위젯)
+  - services/ (API 클라이언트)
+  - models/ (데이터 모델)
+- [x] REST API 클라이언트 ✅
+  - services/api_client.py
+- [x] WebSocket 클라이언트 ✅
+  - services/websocket_client.py
+- [x] 메인 윈도우 UI ✅
+  - views/main_window.py
+  - 탭 인터페이스 (대시보드, 매매, 차트, 급등주, 설정)
+
+#### Trading Engine 초기화
+- [x] 디렉토리 구조 생성 ✅
+  - engine/core/ (핵심 엔진)
+  - engine/brokers/ (브로커 어댑터)
+  - engine/strategies/ (전략 모듈)
+  - engine/indicators/ (기술 지표)
+  - engine/events/ (이벤트 시스템)
+- [x] 기본 설정 파일 ✅
+  - requirements.txt (32-bit Python)
+  - .env.example
+- [x] TradingEngine 클래스 ✅
+  - engine/core/engine.py
+- [x] 브로커 어댑터 패턴 ✅
+  - engine/brokers/base.py (추상 클래스)
+  - engine/brokers/kiwoom.py (스켈레톤)
+
+#### 스크립트
+- [x] setup_frontend.ps1 ✅
+- [x] start_frontend.ps1 ✅
+- [x] start_backend.ps1 ✅
+- [x] start_all.ps1 ✅
+
+## 📋 Phase 3-6 (예정)
 
 ### Phase 3: 매매 엔진 리팩토링
 - 브로커 어댑터 패턴
@@ -127,16 +167,34 @@ file 작성
 - API 문서 (Swagger)
 - 사용자 매뉴얼
 
-## 🚀 다음 단계
+## 🚀 다음 단계 (Phase 3)
 
-1. **Backend Repository 구현** - 데이터 접근 계층
-2. **기본 API 엔드포인트 완성** - 계좌, 매매, 시세 API
-3. **Frontend 프로젝트 시작** - PySide6 초기 구조
+1. **기존 코드 통합**
+   - `auto_trading/kiwoom_api.py` → `trading-engine/engine/brokers/kiwoom.py`
+   - `auto_trading/strategies.py` → `trading-engine/engine/strategies/`
+   - `auto_trading/indicators.py` → `trading-engine/engine/indicators/technical.py`
+   - `auto_trading/surge_detector.py` → `trading-engine/engine/strategies/surge.py`
+
+2. **이벤트 시스템 구축**
+   - Redis Pub/Sub 또는 Redis Streams
+   - 이벤트 버스 구현
+   - Trading Engine → Backend 이벤트 전파
+
+3. **전략 모듈화**
+   - 전략 추상 클래스 정의
+   - 각 전략을 독립 모듈로 분리
+   - 플러그인 방식으로 전략 추가/제거
+
+4. **Backend와 Engine 연동**
+   - HTTP API로 Engine 제어
+   - Redis로 실시간 데이터 전달
+   - WebSocket으로 Frontend에 브로드캐스트
 
 ## 📊 진행률
 
-- Phase 1: **90%** (Backend API 거의 완료, Frontend/Engine 초기화 남음)
-- 전체: **15%** (Phase 1 of 6)
+- Phase 1: **100%** ✅ (완료)
+- Phase 2: **100%** ✅ (완료)
+- 전체: **33%** (Phase 2 of 6 완료)
 
 ## 💡 참고사항
 
@@ -148,28 +206,42 @@ file 작성
 ---
 
 **최종 업데이트**: 2025-10-24
-**다음 작업**: WebSocket 구현 및 Frontend 프로젝트 초기화
+**다음 작업**: Phase 3 - 매매 엔진 리팩토링 및 기존 코드 통합
 
-## ✨ 최근 완료 (Phase 1 거의 완료!)
+## ✨ 최근 완료 (Phase 2 완료!)
 
-### Backend API 완성 ✅
-1. **Repository 패턴** (5개 클래스)
-   - BaseRepository - 공통 CRUD
-   - AccountRepository - 계좌 관리
-   - PositionRepository - 포지션 관리
-   - OrderRepository - 주문 관리
-   - TradeRepository - 거래 내역 관리
+### Phase 1 & 2 완성 ✅
 
-2. **REST API 엔드포인트** (3개 라우터, 20+ 엔드포인트)
-   - `/api/v1/account/*` - 계좌 조회, 잔고, 포지션
-   - `/api/v1/trading/*` - 주문 실행, 취소, 조회
-   - `/api/v1/market/*` - 시세, 차트, 급등주
+1. **Backend API 완성**
+   - Repository 패턴 (5개 클래스)
+   - REST API 엔드포인트 (3개 라우터, 20+ 엔드포인트)
+   - WebSocket 실시간 통신 (4개 채널)
 
-3. **테스트 가능한 상태**
+2. **Frontend 프로젝트 초기화**
+   - PySide6 기본 구조
+   - REST API 클라이언트
+   - WebSocket 클라이언트
+   - 메인 윈도우 UI
+
+3. **Trading Engine 구조화**
+   - 디렉토리 구조
+   - TradingEngine 클래스
+   - 브로커 어댑터 패턴 (BaseBroker, KiwoomBroker)
+
+4. **실행 스크립트**
+   - setup_frontend.ps1
+   - start_frontend.ps1
+   - start_backend.ps1
+   - start_all.ps1
+
+5. **테스트 가능한 상태**
    ```bash
-   cd backend
-   pip install -r requirements.txt
-   python app/main.py
+   # Backend 실행
+   .\scripts\start_backend.ps1
    # API 문서: http://localhost:8000/docs
+   
+   # Frontend 실행
+   .\scripts\setup_frontend.ps1
+   .\scripts\start_frontend.ps1
    ```
 

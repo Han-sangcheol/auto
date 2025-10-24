@@ -11,6 +11,7 @@ from .db.session import engine, Base
 
 # API 라우터
 from .api.v1 import account, trading, market
+from .api import websocket
 
 
 # 데이터베이스 테이블 생성
@@ -70,7 +71,14 @@ app.include_router(
     prefix=f"{settings.API_V1_STR}/market",
     tags=["market"]
 )
-# TODO: strategy, surge 라우터 추가
+
+# WebSocket 라우터 등록
+app.include_router(
+    websocket.router,
+    tags=["websocket"]
+)
+
+# TODO: strategy 라우터 추가
 
 
 if __name__ == "__main__":
