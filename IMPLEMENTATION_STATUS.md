@@ -140,13 +140,50 @@ file 작성
 - [x] start_backend.ps1 ✅
 - [x] start_all.ps1 ✅
 
-## 📋 Phase 3-6 (예정)
+## ✅ Phase 3: 매매 엔진 리팩토링 (완료 - 100%)
 
-### Phase 3: 매매 엔진 리팩토링
-- 브로커 어댑터 패턴
-- 키움 API 어댑터
-- 이벤트 기반 아키텍처
-- 전략 모듈 분리
+### 완료된 작업
+
+#### 1. Indicators 모듈 통합 ✅
+- [x] `trading-engine/engine/indicators/technical.py`
+- [x] SMA, EMA, RSI, MACD, Bollinger Bands
+
+#### 2. 브로커 어댑터 패턴 ✅
+- [x] `engine/brokers/base.py` - BaseBroker 추상 클래스
+- [x] `engine/brokers/kiwoom.py` - 키움 API 완전 통합 (456줄)
+
+#### 3. Risk Manager 통합 ✅
+- [x] `engine/core/risk_manager.py`
+- [x] 포지션 관리, 손절/익절, 사이징
+
+#### 4. 전략 모듈화 ✅
+- [x] `engine/strategies/base.py` - BaseStrategy 추상 클래스
+- [x] `engine/strategies/ma_crossover.py` - 이동평균선
+- [x] `engine/strategies/rsi.py` - RSI 전략
+- [x] `engine/strategies/macd.py` - MACD 전략
+- [x] `engine/strategies/multi.py` - 통합 전략
+- [x] `engine/strategies/surge_strategy.py` - 급등주 전략
+
+#### 5. 이벤트 시스템 구축 ✅
+- [x] `engine/events/event_bus.py` - 이벤트 버스
+- [x] EventType 정의 (14개 이벤트)
+- [x] 동기/비동기 이벤트 처리
+- [x] Redis Pub/Sub 연동 (옵션)
+
+#### 6. 설정 관리 ✅
+- [x] `engine/core/config.py` - 설정 관리
+- [x] 환경 변수 자동 로드
+- [x] 설정 검증 및 출력
+
+#### 7. Trading Engine 완전 리팩토링 ✅
+- [x] `engine/core/engine.py` - 모든 모듈 통합 (379줄)
+- [x] 이벤트 기반 아키텍처 적용
+- [x] 리스크 관리 통합
+- [x] 전략 실행 자동화
+
+**상세**: `PHASE_3_COMPLETE.md` 참고
+
+## 📋 Phase 4-6 (예정)
 
 ### Phase 4: GUI 개발
 - PySide6 메인 윈도우
@@ -194,7 +231,8 @@ file 작성
 
 - Phase 1: **100%** ✅ (완료)
 - Phase 2: **100%** ✅ (완료)
-- 전체: **33%** (Phase 2 of 6 완료)
+- Phase 3: **100%** ✅ (완료)
+- 전체: **50%** (Phase 3 of 6 완료)
 
 ## 💡 참고사항
 
@@ -206,7 +244,7 @@ file 작성
 ---
 
 **최종 업데이트**: 2025-10-24
-**다음 작업**: Phase 3 - 매매 엔진 리팩토링 및 기존 코드 통합
+**다음 작업**: Phase 4 - PySide6 GUI 개발
 
 ## ✨ 최근 완료 (Phase 2 완료!)
 
