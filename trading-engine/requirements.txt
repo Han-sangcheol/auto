@@ -17,3 +17,7 @@ loguru==0.7.2
 # Redis (옵션)
 redis==5.0.1
 
+# 테스트
+pytest==7.4.3
+pytest-cov==4.1.0
+

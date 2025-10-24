@@ -26,6 +26,10 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+# Redis Subscriber (이벤트 수신)
+from .services.redis_subscriber import RedisEventSubscriber
+redis_subscriber = None
+
 # CORS 미들웨어 설정
 app.add_middleware(
     CORSMiddleware,
@@ -89,6 +93,43 @@ app.include_router(
 )
 
 # TODO: strategy 라우터 추가
+
+
+# Startup/Shutdown 이벤트
+@app.on_event("startup")
+async def startup_event():
+    """애플리케이션 시작 시 실행"""
+    global redis_subscriber
+    
+    # Redis Subscriber 시작
+    redis_subscriber = RedisEventSubscriber(
+        redis_url=settings.REDIS_URL if hasattr(settings, 'REDIS_URL') else "redis://localhost:6379"
+    )
+    
+    if redis_subscriber.connect():
+        from .api.websocket import broadcast_to_all
+        
+        # 각 채널별 핸들러 등록
+        redis_subscriber.subscribe('trading:orders', 
+            lambda data: asyncio.create_task(broadcast_to_all('orders', data)))
+        redis_subscriber.subscribe('trading:positions', 
+            lambda data: asyncio.create_task(broadcast_to_all('positions', data)))
+        redis_subscriber.subscribe('market:data', 
+            lambda data: asyncio.create_task(broadcast_to_all('market', data)))
+        redis_subscriber.subscribe('trading:surge', 
+            lambda data: asyncio.create_task(broadcast_to_all('surge', data)))
+        
+        # 백그라운드에서 수신 시작
+        asyncio.create_task(redis_subscriber.start_listening())
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """애플리케이션 종료 시 실행"""
+    global redis_subscriber
+    
+    if redis_subscriber:
+        redis_subscriber.stop()
 
 
 if __name__ == "__main__":

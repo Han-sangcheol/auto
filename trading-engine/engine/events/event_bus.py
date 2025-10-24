@@ -198,11 +198,39 @@ class EventBus:
         if not self.redis_client:
             return
         
-        channel = f"trading_events:{event.event_type.value}"
-        message = event.to_dict()
+        # Backend와 호환되는 채널 매핑
+        channel_mapping = {
+            # 주문 관련 -> trading:orders
+            EventType.ORDER_PLACED: 'trading:orders',
+            EventType.ORDER_FILLED: 'trading:orders',
+            EventType.ORDER_CANCELLED: 'trading:orders',
+            EventType.ORDER_FAILED: 'trading:orders',
+            
+            # 포지션 관련 -> trading:positions
+            EventType.POSITION_OPENED: 'trading:positions',
+            EventType.POSITION_CLOSED: 'trading:positions',
+            EventType.POSITION_UPDATED: 'trading:positions',
+            
+            # 시세 관련 -> market:data
+            EventType.PRICE_UPDATE: 'market:data',
+            
+            # 급등주 -> trading:surge
+            EventType.SURGE_DETECTED: 'trading:surge',
+            
+            # 거래 체결 -> trading:trades
+            EventType.SIGNAL_GENERATED: 'trading:trades',
+        }
+        
+        # 채널 결정
+        channel = channel_mapping.get(event.event_type, 'trading:events')
+        
+        # 메시지 준비 (JSON으로 직렬화)
+        import json
+        message = json.dumps(event.to_dict())
         
         # Redis Pub/Sub
-        self.redis_client.publish(channel, str(message))
+        self.redis_client.publish(channel, message)
+        logger.debug(f"Redis 발행: {channel} - {event.event_type.value}")
     
     def connect_redis(self, redis_url: str = "redis://localhost:6379/0"):
         """Redis 연결"""

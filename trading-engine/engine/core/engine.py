@@ -18,6 +18,7 @@ from .config import Config
 from ..strategies import MultiStrategy, MACrossoverStrategy, RSIStrategy, MACDStrategy
 from ..strategies.surge_strategy import SurgeStrategy
 from ..events.event_bus import EventBus, EventType
+from ..events.redis_publisher import RedisEventPublisher
 
 
 class TradingEngine:
