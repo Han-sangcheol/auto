@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 데이터베이스
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    container_name: cleonai_postgres
+    environment:
+      POSTGRES_USER: cleonai
+      POSTGRES_PASSWORD: cleonai_password
+      POSTGRES_DB: trading_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - cleonai_network
+    restart: unless-stopped
+
+  # Redis - 캐싱 및 실시간 데이터
+  redis:
+    image: redis:7-alpine
+    container_name: cleonai_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - cleonai_network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # FastAPI 백엔드
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: cleonai_backend
+    environment:
+      DATABASE_URL: postgresql://cleonai:cleonai_password@postgres:5432/trading_db
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: your-secret-key-change-in-production
+      ENVIRONMENT: development
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./shared:/app/shared
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - cleonai_network
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Trading Engine (32비트 Python 필요 - 별도 프로세스)
+  # 참고: 키움 API 의존성으로 인해 Windows 호스트에서 직접 실행 권장
+  # trading-engine:
+  #   build:
+  #     context: ./trading-engine
+  #     dockerfile: ../docker/Dockerfile.engine
+  #   container_name: cleonai_engine
+  #   environment:
+  #     BACKEND_URL: http://backend:8000
+  #     REDIS_URL: redis://redis:6379
+  #   volumes:
+  #     - ./trading-engine:/app
+  #     - ./shared:/app/shared
+  #   depends_on:
+  #     - backend
+  #     - redis
+  #   networks:
+  #     - cleonai_network
+  #   restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  cleonai_network:
+    driver: bridge
+
