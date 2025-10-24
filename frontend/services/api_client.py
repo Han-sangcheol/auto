@@ -127,4 +127,29 @@ class APIClient:
         response = self.session.get(f"{self.api_v1}/logs", params=params)
         response.raise_for_status()
         return response.json()
+    
+    # Trading Engine 제어 API
+    def get_engine_status(self) -> dict:
+        """Engine 상태 조회"""
+        response = self.session.get(f"{self.api_v1}/engine/status")
+        response.raise_for_status()
+        return response.json()
+    
+    def start_engine(self, config: Optional[dict] = None) -> dict:
+        """Engine 시작"""
+        response = self.session.post(f"{self.api_v1}/engine/start", json=config or {})
+        response.raise_for_status()
+        return response.json()
+    
+    def stop_engine(self) -> dict:
+        """Engine 중지"""
+        response = self.session.post(f"{self.api_v1}/engine/stop")
+        response.raise_for_status()
+        return response.json()
+    
+    def restart_engine(self, config: Optional[dict] = None) -> dict:
+        """Engine 재시작"""
+        response = self.session.post(f"{self.api_v1}/engine/restart", json=config or {})
+        response.raise_for_status()
+        return response.json()
 

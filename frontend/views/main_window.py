@@ -76,6 +76,49 @@ class MainWindow(QMainWindow):
         
         layout.addStretch()
         
+        # Engine 제어
+        self.engine_status_label = QLabel("Engine: ⚪ 중지")
+        self.engine_status_label.setStyleSheet("padding: 5px; font-weight: bold;")
+        layout.addWidget(self.engine_status_label)
+        
+        self.engine_start_btn = QPushButton("▶️ Engine 시작")
+        self.engine_start_btn.clicked.connect(self.start_engine)
+        self.engine_start_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                padding: 5px 15px;
+                border: none;
+                border-radius: 3px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        layout.addWidget(self.engine_start_btn)
+        
+        self.engine_stop_btn = QPushButton("⏸️ Engine 중지")
+        self.engine_stop_btn.clicked.connect(self.stop_engine)
+        self.engine_stop_btn.setEnabled(False)
+        self.engine_stop_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #F44336;
+                color: white;
+                padding: 5px 15px;
+                border: none;
+                border-radius: 3px;
+            }
+            QPushButton:hover {
+                background-color: #D32F2F;
+            }
+            QPushButton:disabled {
+                background-color: #CCCCCC;
+            }
+        """)
+        layout.addWidget(self.engine_stop_btn)
+        
+        layout.addSpacing(20)
+        
         # 계좌 정보 (임시)
         account_label = QLabel("계좌: 모의투자")
         layout.addWidget(account_label)
@@ -83,6 +126,14 @@ class MainWindow(QMainWindow):
         # 잔고 (임시)
         balance_label = QLabel("잔고: 10,000,000원")
         layout.addWidget(balance_label)
+        
+        # Engine 상태 체크 타이머
+        self.engine_status_timer = QTimer()
+        self.engine_status_timer.timeout.connect(self.update_engine_status)
+        self.engine_status_timer.start(5000)  # 5초마다 체크
+        
+        # 초기 상태 업데이트
+        self.update_engine_status()
         
         return toolbar
     
@@ -196,8 +247,71 @@ class MainWindow(QMainWindow):
         change_rate = data.get('change_rate', 0)
         self.status_bar.showMessage(f"🚀 급등주 감지: {stock_code} (+{change_rate:.2f}%)", 10000)
     
+    def update_engine_status(self):
+        """Engine 상태 업데이트"""
+        try:
+            status = self.api_client.get_engine_status()
+            is_running = status.get('is_running', False)
+            
+            if is_running:
+                self.engine_status_label.setText("Engine: 🟢 실행 중")
+                self.engine_status_label.setStyleSheet("padding: 5px; font-weight: bold; color: #4CAF50;")
+                self.engine_start_btn.setEnabled(False)
+                self.engine_stop_btn.setEnabled(True)
+            else:
+                self.engine_status_label.setText("Engine: ⚪ 중지")
+                self.engine_status_label.setStyleSheet("padding: 5px; font-weight: bold; color: #999;")
+                self.engine_start_btn.setEnabled(True)
+                self.engine_stop_btn.setEnabled(False)
+        
+        except Exception as e:
+            self.engine_status_label.setText("Engine: ⚠️ 오류")
+            self.engine_status_label.setStyleSheet("padding: 5px; font-weight: bold; color: #FF9800;")
+            print(f"Engine 상태 조회 오류: {e}")
+    
+    def start_engine(self):
+        """Engine 시작"""
+        try:
+            from PySide6.QtWidgets import QMessageBox
+            
+            result = self.api_client.start_engine()
+            QMessageBox.information(self, "Engine 시작", "Trading Engine이 시작되었습니다.")
+            self.update_engine_status()
+            self.status_bar.showMessage(f"🚀 Engine 시작 (PID: {result.get('pid')})", 5000)
+        
+        except Exception as e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Engine 시작 실패", f"Engine 시작 중 오류:\n{str(e)}")
+    
+    def stop_engine(self):
+        """Engine 중지"""
+        try:
+            from PySide6.QtWidgets import QMessageBox
+            
+            reply = QMessageBox.question(
+                self,
+                "Engine 중지",
+                "Trading Engine을 중지하시겠습니까?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                result = self.api_client.stop_engine()
+                QMessageBox.information(self, "Engine 중지", "Trading Engine이 중지되었습니다.")
+                self.update_engine_status()
+                self.status_bar.showMessage("⏸️ Engine 중지됨", 5000)
+        
+        except Exception as e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Engine 중지 실패", f"Engine 중지 중 오류:\n{str(e)}")
+    
     def closeEvent(self, event):
-        """종료 시 WebSocket 정리"""
+        """종료 시 정리"""
+        # Engine 상태 타이머 중지
+        self.engine_status_timer.stop()
+        
+        # WebSocket 정리
         self.ws_manager.stop()
+        
         event.accept()
 

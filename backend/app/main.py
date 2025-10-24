@@ -10,7 +10,7 @@ from .core.config import settings
 from .db.session import engine, Base
 
 # API 라우터
-from .api.v1 import account, trading, market
+from .api.v1 import account, trading, market, logs, engine
 from .api import websocket
 
 
@@ -70,6 +70,16 @@ app.include_router(
     market.router,
     prefix=f"{settings.API_V1_STR}/market",
     tags=["market"]
+)
+app.include_router(
+    logs.router,
+    prefix=f"{settings.API_V1_STR}/logs",
+    tags=["logs"]
+)
+app.include_router(
+    engine.router,
+    prefix=f"{settings.API_V1_STR}/engine",
+    tags=["engine"]
 )
 
 # WebSocket 라우터 등록
