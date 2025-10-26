@@ -180,3 +180,59 @@ auto_trading/
 **버전**: 1.1.0  
 **최종 업데이트**: 2025년 10월 23일  
 **주요 추가 기능**: 급등주 자동 감지 및 매매
+
+
+## 실행 방법
+# 1. Docker 서비스 시작
+docker-compose up -d postgres redis
+
+# 2. Backend 시작
+cd backend
+.\.venv\Scripts\Activate.ps1
+uvicorn app.main:app --reload
+
+# 3. Frontend 시작 (새 터미널)
+cd frontend
+.\.venv\Scripts\Activate.ps1
+python main.py
+
+## 완전 실행 (자동매매 포함):
+# 터미널 1: Backend
+cd backend
+.\.venv\Scripts\Activate.ps1
+uvicorn app.main:app --reload
+
+# 터미널 2: Frontend
+cd frontend
+.\.venv\Scripts\Activate.ps1
+python main.py
+
+# 터미널 3: Trading Engine
+cd trading-engine
+.\.venv32\Scripts\Activate.ps1
+python engine/main.py
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

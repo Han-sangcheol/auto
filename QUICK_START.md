@@ -1,143 +1,137 @@
-# CleonAI Trading Platform - 빠른 시작 가이드
+# CleonAI Trading Platform - 빠른 시작
 
-## 🚀 10분 안에 시작하기
+## 🚀 한 번에 실행하기
 
-### 1. Docker 서비스 시작
+### 방법 1: 배치 파일 (가장 쉬움)
 
+**Windows 탐색기에서:**
+1. `START.bat` 파일을 더블클릭
+
+**또는 PowerShell에서:**
 ```powershell
-# PostgreSQL + Redis 시작
-docker-compose up -d postgres redis
-
-# 로그 확인
-docker-compose logs -f postgres redis
+.\START.ps1
 ```
-
-### 2. Backend 설정 및 실행
-
-```powershell
-# 자동 설정 스크립트 실행
-.\scripts\setup_backend.ps1
-
-# 또는 수동 설정
-cd backend
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-
-# Backend 시작
-python app/main.py
-```
-
-**Backend가 시작되면:**
-- API 서버: http://localhost:8000
-- Swagger 문서: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-
-### 3. API 테스트
-
-```powershell
-# PowerShell에서 테스트
-.\scripts\test_backend.ps1
-
-# 또는 브라우저에서
-# http://localhost:8000/docs 열기
-```
-
-### 4. API 사용 예시
-
-#### 계좌 조회
-```bash
-GET http://localhost:8000/api/v1/account/
-```
-
-#### 계좌 잔고 확인
-```bash
-GET http://localhost:8000/api/v1/account/1/balance
-```
-
-#### 포지션 목록
-```bash
-GET http://localhost:8000/api/v1/account/1/positions
-```
-
-#### 주문 실행
-```bash
-POST http://localhost:8000/api/v1/trading/order
-Content-Type: application/json
-
-{
-  "account_id": 1,
-  "stock_code": "005930",
-  "stock_name": "삼성전자",
-  "order_type": "buy",
-  "price_type": "market",
-  "quantity": 10
-}
-```
-
-## 📊 현재 구현 상태
-
-### ✅ 완료된 기능
-- [x] Docker 환경 (PostgreSQL, Redis)
-- [x] Database 스키마 (11개 테이블)
-- [x] Backend FastAPI 서버
-- [x] Repository 패턴 (5개)
-- [x] REST API (20+ 엔드포인트)
-  - 계좌 관리
-  - 주문/거래
-  - 시세/급등주
-
-### 🚧 개발 중
-- [ ] WebSocket 실시간 통신
-- [ ] Frontend (PySide6 GUI)
-- [ ] Trading Engine (매매 로직)
-- [ ] 키움 API 연동
-
-## 🔧 문제 해결
-
-### Docker 서비스가 시작되지 않음
-```powershell
-# Docker Desktop이 실행 중인지 확인
-docker ps
-
-# 컨테이너 재시작
-docker-compose down
-docker-compose up -d postgres redis
-```
-
-### Backend가 시작되지 않음
-```powershell
-# 가상환경 활성화 확인
-.\venv\Scripts\Activate.ps1
-
-# 패키지 재설치
-pip install --upgrade pip
-pip install -r requirements.txt
-
-# 데이터베이스 연결 확인
-# .env 파일의 DATABASE_URL 확인
-```
-
-### API 호출 시 404 오류
-- Backend가 실행 중인지 확인: http://localhost:8000/health
-- API 경로 확인: `/api/v1/` 프리픽스 필요
-
-## 📖 추가 문서
-
-- **아키텍처**: `docs/ARCHITECTURE.md`
-- **구현 상황**: `IMPLEMENTATION_STATUS.md`
-- **전체 가이드**: `README_ENTERPRISE.md`
-
-## 🎯 다음 단계
-
-1. **Backend 완성**: WebSocket 추가
-2. **Frontend 시작**: PySide6 GUI 개발
-3. **Trading Engine**: 매매 로직 리팩토링
-4. **통합**: 전체 시스템 연결
 
 ---
 
-**질문이나 문제가 있으신가요?**
-- GitHub Issues에 문의
-- `IMPLEMENTATION_STATUS.md`에서 진행 상황 확인
+### 방법 2: Python 직접 실행
 
+```powershell
+python launcher.py
+```
+
+---
+
+## ✅ 실행되는 서비스
+
+실행하면 자동으로 다음 서비스들이 시작됩니다:
+
+1. **Backend API Server** (http://localhost:8000)
+   - REST API 서버
+   - 별도 콘솔 창에서 실행
+
+2. **Frontend GUI**
+   - PySide6 기반 GUI 애플리케이션
+   - 자동으로 Backend에 연결
+
+3. **Trading Engine** (선택 사항)
+   - 32-bit Python + 키움 API 필요
+   - 수동 실행 권장
+
+---
+
+## 📊 확인 방법
+
+### Backend API 확인
+브라우저에서 다음 URL 접속:
+- http://localhost:8000 - 메인 페이지
+- http://localhost:8000/docs - API 문서 (Swagger UI)
+- http://localhost:8000/health - 헬스 체크
+
+### Frontend 확인
+- GUI 창이 자동으로 열립니다
+- "Backend API 테스트" 버튼을 클릭하여 연결 확인
+
+---
+
+## 🛑 종료 방법
+
+### Ctrl+C
+런처 창에서 `Ctrl+C`를 누르면 모든 서비스가 자동으로 종료됩니다.
+
+---
+
+## 🔧 문제 해결
+
+### 패키지 설치 오류
+```powershell
+# Backend 패키지 설치
+pip install fastapi uvicorn python-multipart websockets sqlalchemy pydantic python-dotenv loguru redis aioredis
+
+# Frontend 패키지 설치
+pip install PySide6 requests
+```
+
+### 포트 충돌 (8000 포트가 이미 사용 중)
+```powershell
+# 포트 사용 중인 프로세스 확인
+netstat -ano | findstr :8000
+
+# 프로세스 종료 (PID 확인 후)
+taskkill /PID <PID> /F
+```
+
+### Backend 시작 실패
+`backend/test_server.py` 파일이 있는지 확인:
+```powershell
+ls backend/test_server.py
+```
+
+없다면 launcher.py가 자동으로 생성합니다.
+
+---
+
+## 📁 프로젝트 구조
+
+```
+D:\cleonAI\
+├── START.bat              # ← 이 파일을 더블클릭!
+├── START.ps1              # PowerShell 버전
+├── launcher.py            # 통합 런처
+├── backend/
+│   └── test_server.py     # 간단한 테스트 서버
+├── frontend/
+│   └── main.py            # GUI 애플리케이션
+└── trading-engine/
+    └── engine/main.py     # 매매 엔진 (선택)
+```
+
+---
+
+## 💡 다음 단계
+
+1. **API 테스트**
+   - http://localhost:8000/docs 에서 API 테스트
+
+2. **Frontend 사용**
+   - GUI에서 "Backend API 테스트" 버튼 클릭
+
+3. **Trading Engine 연결** (선택)
+   - 키움 API 설치
+   - 32-bit Python 설치
+   - `trading-engine/engine/main.py` 실행
+
+---
+
+## 📚 더 자세한 문서
+
+- [배포 가이드](docs/DEPLOYMENT.md)
+- [API 문서](docs/API.md)
+- [사용자 매뉴얼](docs/USER_MANUAL.md)
+- [개발자 가이드](docs/DEVELOPER_GUIDE.md)
+
+---
+
+**문제가 있나요?**
+- GitHub Issues: https://github.com/yourusername/cleonai-trading-platform/issues
+- Email: support@cleonai.com

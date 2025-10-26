@@ -23,11 +23,11 @@ class APIClient:
     def check_health(self) -> Optional[dict]:
         """Backend 헬스 체크"""
         try:
-            response = self.session.get(f"{self.base_url}/health", timeout=3)
+            response = self.session.get(f"{self.base_url}/health", timeout=1)  # 1초로 단축
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            print(f"Health check failed: {e}")
+            # 타임아웃이나 연결 오류는 조용히 처리
             return None
     
     # 계좌 API
