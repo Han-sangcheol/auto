@@ -11,8 +11,8 @@ Loguru 라이브러리를 사용하여 프로그램의 모든 활동을 로그�
    - 중요 이벤트 강조
 
 2. 파일 로그
-   - logs/trading.log: 모든 활동 기록
-   - logs/error.log: 에러만 별도 기록
+   - logs/trading_YYYY-MM-DD.log: 날짜별 활동 기록
+   - logs/error_YYYY-MM-DD.log: 날짜별 에러 기록
    - 자동 로테이션 (일일/주간)
    - 압축 저장 (오래된 로그)
 
@@ -33,10 +33,15 @@ Loguru 라이브러리를 사용하여 프로그램의 모든 활동을 로그�
 from logger import log
 log.info("정보 메시지")
 log.error("오류 메시지")
+
+[수정 내역 - 2025-10-26]
+- 로그 파일명에 날짜 추가: trading_YYYY-MM-DD.log
+- 날짜별로 로그 파일 자동 생성
 """
 
 import sys
 from pathlib import Path
+from datetime import datetime
 from loguru import logger
 from config import Config
 
@@ -48,7 +53,7 @@ class Logger:
         self.setup_logger()
     
     def setup_logger(self):
-        """로거 설정"""
+        """로거 설정 (날짜별 로그 파일 생성)"""
         # 기존 핸들러 제거
         logger.remove()
         
@@ -62,32 +67,61 @@ class Logger:
         
         # 로그 디렉토리 생성
         log_path = Path(Config.LOG_FILE_PATH)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_dir = log_path.parent
+        log_dir.mkdir(parents=True, exist_ok=True)
         
-        # 파일 로그 설정 (상세 정보 포함)
+        # 현재 날짜로 파일명 생성
+        today = datetime.now().strftime("%Y-%m-%d")
+        
+        # 파일 로그 설정 (날짜별 파일)
+        daily_log_path = log_dir / f"trading_{today}.log"
         logger.add(
-            Config.LOG_FILE_PATH,
+            daily_log_path,
             format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {message}",
             level="DEBUG",
-            rotation="1 day",      # 매일 자정에 로그 파일 교체
+            rotation="00:00",      # 매일 자정에 로그 파일 교체
             retention="30 days",   # 30일간 로그 보관
             compression="zip",     # 오래된 로그는 압축
             encoding="utf-8"
         )
         
-        # 에러 로그는 별도 파일에 저장
-        error_log_path = log_path.parent / "error.log"
+        # 에러 로그는 날짜별 별도 파일에 저장
+        daily_error_log_path = log_dir / f"error_{today}.log"
         logger.add(
-            error_log_path,
+            daily_error_log_path,
             format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {message}",
             level="ERROR",
-            rotation="1 week",
-            retention="60 days",
-            compression="zip",
+            rotation="00:00",      # 매일 자정에 교체
+            retention="60 days",   # 60일간 보관
+            compression="zip",     # 압축 저장
             encoding="utf-8"
         )
         
-        logger.info("로깅 시스템 초기화 완료")
+        # 최신 로그 심볼릭 링크 (호환성 유지)
+        # trading.log와 error.log는 최신 로그를 가리킴
+        latest_trading_log = log_dir / "trading.log"
+        latest_error_log = log_dir / "error.log"
+        
+        # 최신 로그 파일 복사 (심볼릭 링크 대신)
+        logger.add(
+            latest_trading_log,
+            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {message}",
+            level="DEBUG",
+            rotation="1 day",
+            retention="7 days",    # 최신 로그는 7일만 유지
+            encoding="utf-8"
+        )
+        
+        logger.add(
+            latest_error_log,
+            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {message}",
+            level="ERROR",
+            rotation="1 day",
+            retention="7 days",
+            encoding="utf-8"
+        )
+        
+        logger.info(f"로깅 시스템 초기화 완료 - 로그 파일: {daily_log_path.name}")
     
     @staticmethod
     def get_logger():

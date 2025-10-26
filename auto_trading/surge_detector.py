@@ -230,7 +230,17 @@ class SurgeDetector:
             return
         
         self.is_monitoring = True
-        log.success(f"급등주 모니터링 시작: {len(self.candidates)}개 종목")
+        log.success(f"🚀 급등주 모니터링 시작!")
+        log.info(f"   📋 후보군: {len(self.candidates)}개 종목")
+        log.info(f"   📊 조건: 상승률 >= {self.min_change_rate}%, 거래량 >= {self.min_volume_ratio}배")
+        
+        # 후보군 샘플 출력 (처음 5개)
+        sample_codes = list(self.candidates.keys())[:5]
+        for code in sample_codes:
+            candidate = self.candidates[code]
+            log.info(f"   • {candidate.name}({code})")
+        if len(self.candidates) > 5:
+            log.info(f"   ... 외 {len(self.candidates) - 5}개")
     
     def stop_monitoring(self):
         """모니터링 중지"""

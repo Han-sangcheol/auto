@@ -217,11 +217,19 @@ def main():
         # 사용자 확인
         input("Enter 키를 눌러 자동매매를 시작하세요...")
         
-        # 자동매매 시작
+        # 자동매매 시작 (논블로킹)
         engine.start_trading()
+        
+        # PyQt 이벤트 루프 실행 (GUI 응답 유지)
+        log.info("📡 PyQt 이벤트 루프 실행 중... (GUI 응답 유지)")
+        log.info("   종료하려면 Ctrl+C를 누르세요.")
+        
+        # 이벤트 루프 실행
+        app.exec_()
         
         # 종료 처리
         log.info("자동매매를 종료합니다...")
+        engine.stop_trading()
         kiwoom.disconnect()
         
         # 최종 통계
@@ -231,11 +239,27 @@ def main():
         
     except KeyboardInterrupt:
         log.info("\n사용자가 프로그램을 중단했습니다.")
+        # 안전한 종료
+        try:
+            if 'engine' in locals():
+                engine.stop_trading()
+            if 'kiwoom' in locals():
+                kiwoom.disconnect()
+        except:
+            pass
         return 0
         
     except Exception as e:
         log.error(f"❌ 예상치 못한 오류 발생: {e}")
         log.error("상세 오류는 로그 파일을 확인하세요.")
+        # 안전한 종료
+        try:
+            if 'engine' in locals():
+                engine.stop_trading()
+            if 'kiwoom' in locals():
+                kiwoom.disconnect()
+        except:
+            pass
         return 1
 
 

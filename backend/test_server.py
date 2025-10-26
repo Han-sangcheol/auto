@@ -33,12 +33,17 @@ async def health_check():
 
 @app.get("/api/v1/account")
 async def get_accounts():
+    """계좌 정보 조회 (테스트용)"""
     return [
         {
             "id": 1,
             "broker": "kiwoom",
-            "account_number": "모의투자",
-            "balance": 10000000
+            "account_no": "8113110311",        # 실제 계좌번호
+            "account_name": "모의투자계좌",      # 계좌명
+            "account_type": "simulation",       # simulation 또는 real
+            "balance": 10000000,
+            "initial_balance": 10000000,
+            "is_active": True
         }
     ]
 

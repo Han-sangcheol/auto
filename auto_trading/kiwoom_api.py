@@ -186,9 +186,21 @@ class KiwoomAPI:
             
             if ret == 0:
                 self.request_event_loop.exec_()
-                return self.data_cache.get('balance', {})
+                balance_data = self.data_cache.get('balance', {})
+                
+                # 조회 성공 시 상세 로그
+                if balance_data:
+                    log.success(f"✅ 잔고 조회 성공")
+                    log.info(f"   💰 예수금: {balance_data.get('cash', 0):,}원")
+                    log.info(f"   📊 총평가: {balance_data.get('total_value', 0):,}원")
+                    log.info(f"   📈 총손익: {balance_data.get('profit_loss', 0):+,}원")
+                else:
+                    log.warning("⚠️  잔고 조회 응답 없음 (데이터 파싱 실패 가능)")
+                
+                return balance_data
             else:
-                log.error(f"잔고 조회 실패: {ret}")
+                log.error(f"❌ 잔고 조회 실패: {ret}")
+                log.error(f"   에러 코드 -202: 조회 과부하 (잠시 후 재시도)")
                 return {}
                 
         except Exception as e:
@@ -241,9 +253,25 @@ class KiwoomAPI:
             
             if ret == 0:
                 self.request_event_loop.exec_()
-                return self.data_cache.get('holdings', [])
+                holdings = self.data_cache.get('holdings', [])
+                
+                # 조회 성공 시 상세 로그
+                if holdings:
+                    log.success(f"✅ 보유종목 조회 성공: {len(holdings)}개")
+                    for holding in holdings:
+                        log.info(
+                            f"   📊 {holding['name']}({holding['code']}): "
+                            f"{holding['quantity']}주 @ {holding['buy_price']:,}원 "
+                            f"→ {holding.get('current_price', 0):,}원 "
+                            f"({holding.get('profit_loss_rate', 0):+.2f}%)"
+                        )
+                else:
+                    log.info("📭 보유종목 없음 (초기 상태)")
+                
+                return holdings
             else:
-                log.error(f"보유종목 조회 실패: {ret}")
+                log.error(f"❌ 보유종목 조회 실패: {ret}")
+                log.error(f"   에러 코드 -202: 조회 과부하 (잠시 후 재시도)")
                 return []
                 
         except Exception as e:

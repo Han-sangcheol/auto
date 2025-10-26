@@ -35,6 +35,11 @@
 engine = TradingEngine(kiwoom_api)
 engine.initialize()
 engine.start_trading()
+
+[수정 내역 - 2025-10-26]
+- GUI 응답없음 문제 해결을 위해 QTimer 기반으로 변경
+- 블로킹 while 루프 제거
+- PyQt 이벤트 루프와 통합하여 논블로킹 방식으로 동작
 """
 
 from typing import Dict, List, Optional, Callable
@@ -42,6 +47,8 @@ from datetime import datetime, time as dt_time
 import time
 from collections import defaultdict
 import threading
+
+from PyQt5.QtCore import QTimer
 
 from kiwoom_api import KiwoomAPI
 from strategies import MultiStrategy, SignalType, create_default_strategies
@@ -81,6 +88,11 @@ class TradingEngine:
         self.surge_detector: Optional[SurgeDetector] = None
         self.surge_approval_callback: Optional[Callable] = None
         self.surge_detected_stocks = set()  # 이미 추가된 급등주 추적
+        
+        # QTimer 설정 (GUI 응답없음 문제 해결)
+        self.check_timer = QTimer()
+        self.check_timer.timeout.connect(self._periodic_check)
+        self.check_timer.setInterval(5000)  # 5초마다 체크
         
         log.info("자동매매 엔진 초기화 완료")
     
@@ -160,7 +172,7 @@ class TradingEngine:
         log.info("급등주 승인 콜백 설정 완료")
     
     def start_trading(self):
-        """자동매매 시작"""
+        """자동매매 시작 (논블로킹 방식)"""
         if self.is_running:
             log.warning("이미 실행 중입니다.")
             return
@@ -176,41 +188,110 @@ class TradingEngine:
         # 현재 상태 출력
         self.risk_manager.print_status()
         
-        # 메인 루프
+        # QTimer 시작 (논블로킹)
+        self.check_timer.start()
+        log.info("✅ QTimer 기반 모니터링 시작 (5초 간격)")
+    
+    def _periodic_check(self):
+        """
+        주기적 체크 (QTimer 콜백)
+        GUI 응답없음 문제 해결을 위해 논블로킹 방식으로 구현
+        """
         try:
-            while self.is_running:
-                # 장 운영 시간 확인
-                if not self.is_market_open():
-                    if datetime.now().time() >= dt_time(15, 30):  # 3시 30분 이후
-                        log.info("장 마감. 자동매매를 종료합니다.")
-                        self.stop_trading()
-                        break
-                    
-                    time.sleep(60)  # 1분 대기
-                    continue
-                
-                # 손절매/익절매 확인 (최우선)
-                self.check_exit_conditions()
-                
-                # 일일 손실 한도 확인
-                if self.risk_manager.check_daily_loss_limit():
-                    log.critical("⛔ 일일 손실 한도 초과로 자동매매를 중지합니다.")
+            if not self.is_running:
+                return
+            
+            # 장 운영 시간 확인
+            if not self.is_market_open():
+                if datetime.now().time() >= dt_time(15, 30):  # 3시 30분 이후
+                    log.info("장 마감. 자동매매를 종료합니다.")
                     self.stop_trading()
-                    break
+                    return
+                # 장 시간 외에는 체크만 하고 리턴
+                return
+            
+            # 상태 요약 출력 (5분마다)
+            current_time = datetime.now()
+            if not hasattr(self, '_last_status_time'):
+                self._last_status_time = current_time
+            
+            if (current_time - self._last_status_time).seconds >= 300:  # 5분
+                self._print_status_summary()
+                self._last_status_time = current_time
+            
+            # 손절매/익절매 확인 (최우선)
+            self.check_exit_conditions()
+            
+            # 일일 손실 한도 확인
+            if self.risk_manager.check_daily_loss_limit():
+                log.critical("⛔ 일일 손실 한도 초과로 자동매매를 중지합니다.")
+                self.stop_trading()
+                return
                 
-                # 대기
-                time.sleep(5)  # 5초마다 체크
-                
-        except KeyboardInterrupt:
-            log.info("사용자가 중단했습니다.")
-            self.stop_trading()
         except Exception as e:
-            log.error(f"자동매매 중 오류 발생: {e}")
-            self.stop_trading()
+            log.error(f"주기적 체크 중 오류 발생: {e}")
+            # 오류가 발생해도 타이머는 계속 실행
+    
+    def _print_status_summary(self):
+        """상태 요약 출력"""
+        try:
+            log.info("=" * 70)
+            log.info("📊 자동매매 상태 요약")
+            log.info("=" * 70)
+            
+            # 관심 종목 현황
+            log.info(f"👀 관심 종목: {len(self.watch_list)}개 - {', '.join(self.watch_list[:5])}")
+            if len(self.watch_list) > 5:
+                log.info(f"   ... 외 {len(self.watch_list) - 5}개")
+            
+            # 가격 데이터 수신 현황
+            data_counts = {code: len(hist) for code, hist in self.price_history.items()}
+            if data_counts:
+                log.info(f"📡 가격 데이터: {sum(data_counts.values())}개 수신")
+                for code, count in list(data_counts.items())[:3]:
+                    log.info(f"   {code}: {count}개")
+            else:
+                log.warning("⚠️  가격 데이터 수신 없음 - 실시간 등록 확인 필요")
+            
+            # 포지션 현황
+            positions = self.risk_manager.positions
+            if positions:
+                log.info(f"📈 보유 포지션: {len(positions)}개")
+                for code, pos in positions.items():
+                    pl_pct = ((pos.current_price - pos.entry_price) / pos.entry_price) * 100
+                    log.info(
+                        f"   {code}: {pos.quantity}주 @ {pos.entry_price:,}원 "
+                        f"→ {pos.current_price:,}원 ({pl_pct:+.2f}%)"
+                    )
+            else:
+                log.info("📭 보유 포지션 없음")
+            
+            # 급등주 모니터링 상태
+            if self.surge_detector and self.surge_detector.is_monitoring:
+                surge_stats = self.surge_detector.get_statistics()
+                log.info(f"🚀 급등주 모니터링: 활성 ✅")
+                log.info(f"   후보군: {surge_stats.get('candidate_count', 0)}개")
+                log.info(f"   감지됨: {surge_stats.get('detected_count', 0)}개")
+                log.info(f"   추가됨: {len(self.surge_detected_stocks)}개")
+            else:
+                log.warning("⚠️  급등주 모니터링: 비활성")
+            
+            # 매매 신호
+            log.info(f"📊 매매 신호 생성: {self.signal_count}회")
+            
+            log.info("=" * 70)
+            
+        except Exception as e:
+            log.error(f"상태 요약 출력 중 오류: {e}")
     
     def stop_trading(self):
         """자동매매 중지"""
         self.is_running = False
+        
+        # QTimer 중지
+        if self.check_timer.isActive():
+            self.check_timer.stop()
+            log.info("⏹️  QTimer 모니터링 중지")
         
         # 급등주 모니터링 중지
         if self.surge_detector:
@@ -258,6 +339,7 @@ class TradingEngine:
         
         try:
             current_price = price_data['current_price']
+            change_rate = price_data.get('change_rate', 0)
             
             # 급등주 감지기에 데이터 전달
             if self.surge_detector and self.surge_detector.is_monitoring:
@@ -273,6 +355,13 @@ class TradingEngine:
             # 최근 100개만 유지
             if len(self.price_history[stock_code]) > 100:
                 self.price_history[stock_code] = self.price_history[stock_code][-100:]
+            
+            # 관심 종목의 실시간 가격 표시 (10번째 업데이트마다)
+            if len(self.price_history[stock_code]) % 10 == 0:
+                log.info(
+                    f"📊 실시간: {stock_code} {current_price:,}원 "
+                    f"({change_rate:+.2f}%) | 데이터: {len(self.price_history[stock_code])}개"
+                )
             
             # 보유 중인 종목의 현재가 업데이트
             self.risk_manager.update_position_price(stock_code, current_price)

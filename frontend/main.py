@@ -91,9 +91,18 @@ class SimpleDashboard(QWidget):
             
             if accounts:
                 account = accounts[0]
+                
+                # 계좌 타입 표시 (simulation/real)
+                account_type = account.get('account_type', 'unknown')
+                account_type_text = "🎮 모의투자" if account_type == "simulation" else "💼 실계좌"
+                
+                # account_number 호환성 유지 (account_no 우선)
+                account_no = account.get('account_no') or account.get('account_number', 'N/A')
+                
                 info_text = f"""
-📊 계좌: {account.get('broker', 'N/A')}
-💳 계좌번호: {account.get('account_number', 'N/A')}
+📊 브로커: {account.get('broker', 'N/A')}
+💳 계좌번호: {account_no}
+{account_type_text}
 💰 잔고: {account.get('balance', 0):,}원
                 """
                 self.info_label.setText(info_text)
@@ -104,7 +113,8 @@ class SimpleDashboard(QWidget):
                 self.result_text.append(f"\n=== {current_time} 업데이트 ===")
                 self.result_text.append(f"✅ 계좌 조회 성공")
                 self.result_text.append(f"   브로커: {account.get('broker')}")
-                self.result_text.append(f"   계좌: {account.get('account_number')}")
+                self.result_text.append(f"   계좌번호: {account_no}")
+                self.result_text.append(f"   계좌타입: {account_type_text}")
                 self.result_text.append(f"   잔고: {account.get('balance'):,}원")
             else:
                 self.info_label.setText("⚠️ 계좌 정보 없음")
