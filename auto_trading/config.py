@@ -95,6 +95,9 @@ class Config:
     HEALTH_CHECK_INTERVAL = int(os.getenv('HEALTH_CHECK_INTERVAL', '60'))  # 1분
     ENABLE_AUTO_RECOVERY = os.getenv('ENABLE_AUTO_RECOVERY', 'True').lower() == 'true'
     
+    # 스케줄러 설정
+    ENABLE_AUTO_SHUTDOWN = os.getenv('ENABLE_AUTO_SHUTDOWN', 'False').lower() == 'true'
+    
     # 로깅 설정
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
     LOG_FILE_PATH = os.getenv('LOG_FILE_PATH', 'logs/trading.log')
@@ -171,6 +174,10 @@ class Config:
         if cls.ENABLE_HEALTH_MONITOR:
             print(f"  체크 간격: {cls.HEALTH_CHECK_INTERVAL}초")
             print(f"  자동 복구: {'활성화' if cls.ENABLE_AUTO_RECOVERY else '비활성화'}")
+        
+        print("\n📅 스케줄러 설정:")
+        print(f"  자동 종료: {'활성화 (16:00)' if cls.ENABLE_AUTO_SHUTDOWN else '비활성화'}")
+        
         print("=" * 60)
 
 

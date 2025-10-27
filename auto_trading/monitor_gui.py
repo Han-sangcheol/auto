@@ -19,7 +19,8 @@ window.show()
 
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-    QLabel, QTableWidget, QTableWidgetItem, QTextEdit, QGroupBox, QTabWidget
+    QLabel, QTableWidget, QTableWidgetItem, QTextEdit, QGroupBox, QTabWidget,
+    QPushButton, QMessageBox, QMenuBar, QAction
 )
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QFont, QColor
@@ -33,6 +34,22 @@ try:
 except ImportError:
     CHART_AVAILABLE = False
     print("⚠️  chart_widget.py를 로드할 수 없습니다.")
+
+# 통계 위젯 (선택적 로드)
+try:
+    from statistics_widget import StatisticsWidget
+    STATISTICS_AVAILABLE = True
+except ImportError:
+    STATISTICS_AVAILABLE = False
+    print("⚠️  statistics_widget.py를 로드할 수 없습니다.")
+
+# 설정 대화상자 (선택적 로드)
+try:
+    from settings_dialog import SettingsDialog
+    SETTINGS_AVAILABLE = True
+except ImportError:
+    SETTINGS_AVAILABLE = False
+    print("⚠️  settings_dialog.py를 로드할 수 없습니다.")
 
 
 class MonitorWindow(QMainWindow):
@@ -69,7 +86,15 @@ class MonitorWindow(QMainWindow):
             # 초기 관심 종목 등록
             self.initialize_chart_stocks()
         
+        # 탭 3: 통계 (선택적)
+        if STATISTICS_AVAILABLE:
+            self.statistics_widget = StatisticsWidget(self.trading_engine)
+            self.tab_widget.addTab(self.statistics_widget, "📊 통계")
+        
         main_layout.addWidget(self.tab_widget)
+        
+        # 메뉴바 생성
+        self.create_menu_bar()
         
         # 스타일 적용
         self.apply_styles()
@@ -117,6 +142,76 @@ class MonitorWindow(QMainWindow):
                 pass
             
             self.chart_widget.add_stock(stock_code, stock_name)
+    
+    def create_menu_bar(self):
+        """메뉴바 생성"""
+        menubar = self.menuBar()
+        
+        # 파일 메뉴
+        file_menu = menubar.addMenu("파일")
+        
+        exit_action = QAction("종료", self)
+        exit_action.setShortcut("Ctrl+Q")
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+        
+        # 설정 메뉴
+        if SETTINGS_AVAILABLE:
+            settings_menu = menubar.addMenu("설정")
+            
+            configure_action = QAction("⚙️ 매매 설정...", self)
+            configure_action.triggered.connect(self.open_settings_dialog)
+            settings_menu.addAction(configure_action)
+        
+        # 도움말 메뉴
+        help_menu = menubar.addMenu("도움말")
+        
+        about_action = QAction("정보", self)
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
+    
+    def open_settings_dialog(self):
+        """설정 대화상자 열기"""
+        try:
+            from config import Config
+            
+            dialog = SettingsDialog(Config, self)
+            
+            if dialog.exec_():
+                # 설정 저장됨
+                QMessageBox.information(
+                    self,
+                    "설정 적용",
+                    "설정이 저장되었습니다.\n"
+                    "변경사항을 적용하려면 프로그램을 재시작하세요."
+                )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "오류",
+                f"설정 대화상자를 열 수 없습니다:\n{e}"
+            )
+    
+    def show_about(self):
+        """정보 대화상자"""
+        QMessageBox.about(
+            self,
+            "CleonAI 자동매매 프로그램",
+            "<h2>CleonAI 자동매매 프로그램</h2>"
+            "<p>버전: 1.0.0</p>"
+            "<p>키움증권 Open API 기반 자동매매 시스템</p>"
+            "<hr>"
+            "<p><b>주요 기능:</b></p>"
+            "<ul>"
+            "<li>실시간 가격 모니터링</li>"
+            "<li>다중 전략 매매 신호</li>"
+            "<li>리스크 관리 (손절/익절)</li>"
+            "<li>급등주 자동 감지</li>"
+            "<li>뉴스 감성 분석 (선택적)</li>"
+            "</ul>"
+            "<hr>"
+            "<p><small>⚠️ 투자 책임은 본인에게 있습니다.</small></p>"
+        )
         
     def create_account_group(self) -> QGroupBox:
         """계좌 정보 그룹 생성"""

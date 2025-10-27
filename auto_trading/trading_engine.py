@@ -83,6 +83,13 @@ except ImportError:
     HEALTH_MONITOR_AVAILABLE = False
     log.warning("헬스 모니터를 로드할 수 없습니다. (psutil 미설치)")
 
+try:
+    from scheduler import TradingScheduler
+    SCHEDULER_AVAILABLE = True
+except ImportError:
+    SCHEDULER_AVAILABLE = False
+    log.warning("스케줄러를 로드할 수 없습니다.")
+
 
 class TradingEngine:
     """자동매매 엔진 클래스"""
@@ -127,6 +134,9 @@ class TradingEngine:
         
         # 헬스 모니터 (선택적)
         self.health_monitor = None
+        
+        # 스케줄러 (선택적)
+        self.scheduler = None
         
         # GUI 모니터 창 (선택적)
         self.monitor_window = None
@@ -272,6 +282,18 @@ class TradingEngine:
                     log.warning(f"헬스 모니터 초기화 실패: {e}")
                     self.health_monitor = None
             
+            # 9. 스케줄러 초기화 (선택적)
+            if SCHEDULER_AVAILABLE and getattr(Config, 'ENABLE_AUTO_SHUTDOWN', False):
+                try:
+                    self.scheduler = TradingScheduler(
+                        enable_auto_shutdown=True,
+                        shutdown_callback=self._safe_shutdown
+                    )
+                    log.success(f"자동 종료 스케줄러 활성화 (종료 시간: {TradingScheduler.AUTO_STOP_TIME})")
+                except Exception as e:
+                    log.warning(f"스케줄러 초기화 실패: {e}")
+                    self.scheduler = None
+            
             log.success("자동매매 엔진 초기화 완료")
             return True
             
@@ -316,6 +338,10 @@ class TradingEngine:
         # 헬스 모니터링 시작
         if self.health_monitor:
             self.health_monitor.start()
+        
+        # 스케줄러 시작
+        if self.scheduler:
+            self.scheduler.start()
         
         # 현재 상태 출력
         self.risk_manager.print_status()
@@ -447,6 +473,10 @@ class TradingEngine:
             self.health_monitor.stop()
             # 최종 헬스 요약 출력
             self.health_monitor.print_health_summary()
+        
+        # 스케줄러 중지
+        if self.scheduler:
+            self.scheduler.stop()
         
         # 종료 알림
         if self.notifier:
@@ -1092,6 +1122,26 @@ class TradingEngine:
             status['surge_detected_stocks'] = list(self.surge_detected_stocks)
         
         return status
+    
+    def _safe_shutdown(self):
+        """
+        안전한 종료 (스케줄러 콜백용)
+        
+        모든 자동매매 작업을 정리하고 프로그램을 종료합니다.
+        """
+        log.warning("=" * 70)
+        log.warning("🛑 자동 종료 시작 (스케줄러)")
+        log.warning("=" * 70)
+        
+        try:
+            # 매매 중지
+            if self.is_running:
+                self.stop_trading()
+            
+            log.success("안전한 종료 완료")
+            
+        except Exception as e:
+            log.error(f"안전한 종료 중 오류: {e}")
 
 
 # 테스트 코드
