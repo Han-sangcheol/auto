@@ -39,18 +39,23 @@ class KiwoomAPI:
     
     def __init__(self):
         """초기화"""
+        from config import Config
+        
         self.ocx = QAxWidget("KHOPENAPI.KHOpenAPICtrl.1")
         self.is_connected = False
         self.account_number = None
+        self.account_password = Config.KIWOOM_ACCOUNT_PASSWORD  # 계좌 비밀번호
         self.callbacks = {}
         
         # 이벤트 루프
         self.login_event_loop = None
         self.request_event_loop = None
         
-        # TR 요청 제한 관리
+        # TR 요청 제한 관리 (과부하 방지)
         self.last_request_time = 0
-        self.request_delay = 0.2  # 초당 5건 제한 (0.2초 간격)
+        self.request_delay = 0.5  # 초당 최대 2건으로 제한 (안전 마진)
+        self.request_count = 0  # 요청 카운트
+        self.request_history = []  # 최근 요청 시간 기록
         
         # 데이터 저장
         self.data_cache = {}
@@ -72,46 +77,63 @@ class KiwoomAPI:
         """
         키움 API 로그인
         
+        공동인증서 창이 자동으로 표시됩니다.
+        별도의 계좌 비밀번호 입력은 필요하지 않습니다.
+        
         Returns:
             로그인 성공 여부
         """
         try:
-            log.info("키움 API 로그인 시도...")
+            log.info("⏳ 키움 Open API 로그인 시도 중...")
+            log.info("   → 공동인증서 창이 표시됩니다 (약 5-10초 소요)")
             self.login_event_loop = QEventLoop()
             self.ocx.dynamicCall("CommConnect()")
             self.login_event_loop.exec_()
             
             if self.is_connected:
+                log.success("✅ 키움 Open API 연결 성공!")
+                
                 # 계좌번호 조회
                 account_list = self.ocx.dynamicCall("GetLoginInfo(QString)", "ACCNO")
                 accounts = account_list.split(';')[:-1]  # 마지막 빈 문자열 제거
+                
+                log.info(f"📋 발견된 계좌 수: {len(accounts)}개")
                 
                 if Config.USE_SIMULATION:
                     # 모의투자 계좌 찾기 (8로 시작)
                     sim_accounts = [acc for acc in accounts if acc.startswith('8')]
                     if sim_accounts:
                         self.account_number = sim_accounts[0]
-                        log.success(f"모의투자 계좌 로그인 성공: {self.account_number}")
+                        log.success(f"✅ 모의투자 계좌 로그인 성공")
+                        log.info(f"   💳 계좌번호: {self.account_number}")
                     else:
-                        log.error("모의투자 계좌를 찾을 수 없습니다.")
+                        log.error("❌ 모의투자 계좌를 찾을 수 없습니다.")
+                        log.error(f"   발견된 계좌: {accounts}")
                         return False
                 else:
                     # 실계좌 (8로 시작하지 않는 계좌)
                     real_accounts = [acc for acc in accounts if not acc.startswith('8')]
                     if real_accounts:
                         self.account_number = real_accounts[0]
-                        log.success(f"실계좌 로그인 성공: {self.account_number}")
+                        log.success(f"✅ 실계좌 로그인 성공")
+                        log.info(f"   💳 계좌번호: {self.account_number}")
                     else:
-                        log.error("실계좌를 찾을 수 없습니다.")
+                        log.error("❌ 실계좌를 찾을 수 없습니다.")
+                        log.error(f"   발견된 계좌: {accounts}")
                         return False
                 
                 # 사용자 정보 출력
                 user_name = self.ocx.dynamicCall("GetLoginInfo(QString)", "USER_NAME")
-                log.info(f"사용자: {user_name}")
+                server_type = self.ocx.dynamicCall("GetLoginInfo(QString)", "GetServerGubun")
+                
+                log.info(f"   👤 사용자: {user_name}")
+                log.info(f"   🖥️  서버: {'모의투자 서버' if server_type == '1' else '실서버'}")
+                log.info(f"   🔗 연결 상태: 정상")
                 
                 return True
             else:
-                log.error("로그인 실패")
+                log.error("❌ 키움 Open API 연결 실패")
+                log.error("   공동인증서 로그인을 취소했거나 실패했습니다")
                 return False
                 
         except Exception as e:
@@ -131,14 +153,49 @@ class KiwoomAPI:
             self.login_event_loop.exit()
     
     def _wait_for_request(self):
-        """TR 요청 제한 준수 (초당 5건)"""
-        current_time = time.time()
-        elapsed = current_time - self.last_request_time
+        """
+        TR 요청 제한 준수 (과부하 방지)
         
+        키움 API 제한:
+        - 초당 5건 (공식)
+        - 우리 제한: 초당 2건 (안전 마진 150%)
+        """
+        import time
+        current_time = time.time()
+        
+        # 1초 이내의 최근 요청만 유지
+        self.request_history = [
+            t for t in self.request_history 
+            if current_time - t < 1.0
+        ]
+        
+        # 1초 내에 2건 이상이면 대기
+        if len(self.request_history) >= 2:
+            oldest_request = min(self.request_history)
+            wait_time = 1.0 - (current_time - oldest_request) + 0.1  # 여유 0.1초
+            if wait_time > 0:
+                log.warning(f"⏳ API 과부하 방지 대기: {wait_time:.1f}초")
+                time.sleep(wait_time)
+                current_time = time.time()
+                # 대기 후 히스토리 재정리
+                self.request_history = [
+                    t for t in self.request_history 
+                    if current_time - t < 1.0
+                ]
+        
+        # 최소 간격 보장 (0.5초)
+        elapsed = current_time - self.last_request_time
         if elapsed < self.request_delay:
             time.sleep(self.request_delay - elapsed)
         
+        # 요청 시간 기록
         self.last_request_time = time.time()
+        self.request_history.append(self.last_request_time)
+        self.request_count += 1
+        
+        # 통계 로그 (100건마다)
+        if self.request_count % 100 == 0:
+            log.info(f"📊 API 요청 통계: 총 {self.request_count}건")
     
     def get_balance(self) -> Dict:
         """
@@ -403,7 +460,7 @@ class KiwoomAPI:
             
             ret = self.ocx.dynamicCall(
                 "SendOrder(QString, QString, QString, int, QString, int, int, QString, QString)",
-                ["매수", "0101", self.account_number, 1, stock_code, quantity, price, order_type, ""]
+                ["매수", "0101", self.account_number, 1, stock_code, quantity, price, order_type, self.account_password]
             )
             
             if ret == 0:
@@ -442,7 +499,7 @@ class KiwoomAPI:
             
             ret = self.ocx.dynamicCall(
                 "SendOrder(QString, QString, QString, int, QString, int, int, QString, QString)",
-                ["매도", "0101", self.account_number, 2, stock_code, quantity, price, order_type, ""]
+                ["매도", "0101", self.account_number, 2, stock_code, quantity, price, order_type, self.account_password]
             )
             
             if ret == 0:
@@ -468,12 +525,33 @@ class KiwoomAPI:
     
     def register_real_data(self, stock_codes: List[str]):
         """
-        실시간 시세 등록
+        실시간 시세 등록 (과부하 방지)
         
         Args:
             stock_codes: 종목코드 리스트
+            
+        Note:
+            - 한 번에 최대 100종목까지 등록 가능
+            - 과부하 방지를 위해 API 호출 제한 적용
         """
         try:
+            from config import Config
+            batch_size = Config.REAL_DATA_BATCH_SIZE
+            
+            # 과부하 방지: 너무 많은 종목은 분할 등록
+            if len(stock_codes) > batch_size:
+                log.warning(f"⚠️  종목 수가 많아 분할 등록: {len(stock_codes)}개 → {batch_size}개씩")
+                for i in range(0, len(stock_codes), batch_size):
+                    batch = stock_codes[i:i+batch_size]
+                    log.info(f"   배치 {i//batch_size + 1}: {len(batch)}개 종목 등록 중...")
+                    self.register_real_data(batch)
+                    time.sleep(2.0)  # 배치 간 충분한 대기
+                log.success(f"✅ 전체 {len(stock_codes)}개 종목 분할 등록 완료")
+                return
+            
+            # API 호출 제한 준수
+            self._wait_for_request()
+            
             screen_no = "1000"
             fids = "9001;10;11;12;27;28"  # 현재가, 등락률, 거래량 등
             

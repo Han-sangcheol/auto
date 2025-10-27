@@ -39,11 +39,16 @@ class Config:
     
     # 거래 설정
     USE_SIMULATION = os.getenv('USE_SIMULATION', 'True').lower() == 'true'
-    MAX_STOCKS = int(os.getenv('MAX_STOCKS', '3'))
+    MAX_STOCKS = int(os.getenv('MAX_STOCKS', '3'))  # 최대 동시 보유 종목 수
     POSITION_SIZE_PERCENT = float(os.getenv('POSITION_SIZE_PERCENT', '10'))
     STOP_LOSS_PERCENT = float(os.getenv('STOP_LOSS_PERCENT', '5'))
     TAKE_PROFIT_PERCENT = float(os.getenv('TAKE_PROFIT_PERCENT', '10'))
     DAILY_LOSS_LIMIT_PERCENT = float(os.getenv('DAILY_LOSS_LIMIT_PERCENT', '3'))
+    
+    # API 과부하 방지 설정
+    API_REQUEST_DELAY = 0.5  # API 호출 최소 간격 (초)
+    API_MAX_PER_SECOND = 2   # 초당 최대 API 호출 수
+    REAL_DATA_BATCH_SIZE = 50  # 실시간 데이터 등록 배치 크기
     
     # 관심 종목 리스트
     WATCH_LIST_STR = os.getenv('WATCH_LIST', '005930,000660,035720')
@@ -68,7 +73,7 @@ class Config:
     
     # 급등주 감지 설정
     ENABLE_SURGE_DETECTION = os.getenv('ENABLE_SURGE_DETECTION', 'True').lower() == 'true'
-    SURGE_AUTO_APPROVE = os.getenv('SURGE_AUTO_APPROVE', 'False').lower() == 'true'
+    SURGE_AUTO_APPROVE = os.getenv('SURGE_AUTO_APPROVE', 'True').lower() == 'true'
     SURGE_CANDIDATE_COUNT = int(os.getenv('SURGE_CANDIDATE_COUNT', '100'))
     SURGE_MIN_CHANGE_RATE = float(os.getenv('SURGE_MIN_CHANGE_RATE', '5.0'))
     SURGE_MIN_VOLUME_RATIO = float(os.getenv('SURGE_MIN_VOLUME_RATIO', '2.0'))

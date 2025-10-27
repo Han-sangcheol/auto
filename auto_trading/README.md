@@ -1,3 +1,6 @@
+cd .\auto_trading\
+.\.venv\Scripts\activate
+.\start.bat
 # CleonAI 자동매매 프로그램
 
 키움증권 Open API를 활용한 PC 기반 Python 자동매매 시스템
@@ -81,6 +84,47 @@
    - 실시간 가격 업데이트 표시
    - 급등주 모니터링 상태 명확화
    - 5분마다 자동 상태 요약
+
+10. **[EXECUTION_STATUS_CHECK.md](EXECUTION_STATUS_CHECK.md)** 🆕 **(2025-10-27 업데이트)**
+    - 프로그램 정상 실행 상태 확인
+    - OpenAPI 로그인 상세 설명
+    - 하트비트 (1분마다 정상 실행 확인)
+    - 로그 파일 날짜별 자동 생성 확인
+
+11. **[START_BAT_GUIDE.md](START_BAT_GUIDE.md)** 🆕 **(2025-10-27 업데이트)**
+    - start.bat = python main.py (동일한 실행 결과)
+    - 급등주 자동 승인 설정 (SURGE_AUTO_APPROVE=True)
+    - GUI 환경에서 자동 승인 권장
+    - .env 파일 자동 생성
+
+12. **[AUTO_APPROVAL_UPDATE_2025-10-27.md](AUTO_APPROVAL_UPDATE_2025-10-27.md)** 🆕 **(2025-10-27 업데이트)**
+    - 급등주 자동 승인 기본값 변경 (False → True)
+    - yes/no 입력 불필요 (자체 판단)
+    - GUI 환경 완전 호환
+    - 리스크 관리 설정 가이드
+
+13. **[DAYTRADING_REALTIME_MONITOR.md](DAYTRADING_REALTIME_MONITOR.md)** 🆕 **(2025-10-27 업데이트)**
+    - 단타 매매 실시간 모니터링 가이드
+    - 매수/매도 시점 명확한 확인
+    - 10초 주기 신호 체크 (단타 최적화)
+    - 상세한 체결 로그 (시각, 금액, 손익률)
+
+14. **[DAYTRADING_UPDATE_2025-10-27.md](DAYTRADING_UPDATE_2025-10-27.md)** 🆕 **(2025-10-27 업데이트)**
+    - 단타 매매 실시간 모니터링 업데이트 전체 요약
+    - 신호 체크 주기 6배 단축 (60초 → 10초)
+    - 실시간 가격 표시 2배 증가
+    - 매수/매도/손절/익절 로그 상세화
+
+15. **[IMMEDIATE_BUY_FIX_2025-10-27.md](IMMEDIATE_BUY_FIX_2025-10-27.md)** 🆕 **(2025-10-27 업데이트)** ⭐
+    - **매수/매도 안 되는 문제 해결** (중요!)
+    - 급등주 감지 즉시 매수 (30개 데이터 대기 제거)
+    - 보유 종목 2배 빠른 체크 (10초 → 5초)
+    - 실시간 데이터 수신 확인 로그
+
+16. **[CTRL_C_FIX_2025-10-27.md](CTRL_C_FIX_2025-10-27.md)** 🆕 **(2025-10-27 업데이트)**
+    - Ctrl+C 종료 문제 해결
+    - PyQt 시그널 핸들러 추가
+    - 안전한 종료 및 리소스 정리
 
 ## 빠른 시작 (요약)
 

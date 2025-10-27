@@ -18,26 +18,34 @@ start.bat (더블클릭)
 """
 
 import sys
+import os
+import signal
 import threading
+from datetime import datetime
 from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import QTimer
 from kiwoom_api import KiwoomAPI
 from trading_engine import TradingEngine
+from monitor_gui import MonitorWindow
 from logger import log
 from config import Config
 
 
 def print_banner():
     """프로그램 시작 배너 출력"""
+    from datetime import datetime
     banner = """
     ╔══════════════════════════════════════════════════════════╗
     ║                                                          ║
-    ║          🤖 CleonAI 자동매매 프로그램 v1.0              ║
+    ║          🤖 CleonAI 자동매매 프로그램 v1.3              ║
     ║                                                          ║
     ║          키움증권 Open API 기반 자동매매 시스템          ║
     ║                                                          ║
     ╚══════════════════════════════════════════════════════════╝
     """
     print(banner)
+    print(f"📅 시작 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"📁 작업 디렉토리: {os.getcwd()}")
     print()
 
 
@@ -123,8 +131,14 @@ def main():
     # 배너 출력
     print_banner()
     
-    # 설정 확인
-    log.info("프로그램 시작...")
+    # 로그 시스템 확인
+    today = datetime.now().strftime("%Y-%m-%d")
+    log.info("=" * 80)
+    log.info(f"🚀 프로그램 시작 - {today}")
+    log.info("=" * 80)
+    log.info(f"📁 작업 디렉토리: {os.getcwd()}")
+    log.info(f"📝 로그 파일: logs/trading_{today}.log")
+    log.info(f"🐍 Python 버전: {sys.version}")
     log.info("설정 확인 중...")
     
     # 설정 유효성 검사
@@ -162,15 +176,42 @@ def main():
     try:
         # PyQt 애플리케이션 생성
         log.info("PyQt 애플리케이션 초기화 중...")
+        print("[INFO] Creating PyQt Application...")
         app = QApplication(sys.argv)
+        print("[OK] PyQt Application created successfully")
         
         # 키움 API 초기화
         log.info("키움 API 초기화 중...")
-        kiwoom = KiwoomAPI()
+        print("[INFO] Initializing Kiwoom OpenAPI...")
+        print("       - Loading ActiveX Control: KHOPENAPI.KHOpenAPICtrl.1")
+        print("       - This may take 5-10 seconds...")
+        
+        try:
+            kiwoom = KiwoomAPI()
+            print("[OK] Kiwoom OpenAPI initialized successfully")
+        except Exception as api_error:
+            print("[ERROR] Failed to initialize Kiwoom OpenAPI!")
+            print(f"        Error: {api_error}")
+            print("")
+            print("Possible causes:")
+            print("  1. Kiwoom Open API+ is not installed")
+            print("     → Download: https://www.kiwoom.com/h/customer/download/VOpenApiInfoView")
+            print("  2. Using 64-bit Python (Kiwoom requires 32-bit)")
+            print("     → Check: python --version and verify it says '32 bit'")
+            print("  3. ActiveX not registered properly")
+            print("     → Run as Administrator and reinstall Open API+")
+            print("")
+            log.error(f"키움 API 초기화 실패: {api_error}")
+            raise
         
         # 로그인
-        log.info("키움증권 로그인 중...")
-        log.info("공동인증서 창이 나타나면 인증서를 선택하고 비밀번호를 입력하세요.")
+        log.info("=" * 80)
+        log.info("🔐 키움증권 Open API 로그인")
+        log.info("=" * 80)
+        log.info("📌 공동인증서 창이 자동으로 표시됩니다")
+        log.info("📌 인증서를 선택하고 비밀번호를 입력하세요")
+        log.info("📌 별도의 계좌 비밀번호 입력은 필요하지 않습니다")
+        log.info("")
         
         if not kiwoom.login():
             log.error("❌ 로그인 실패")
@@ -198,6 +239,20 @@ def main():
             engine.set_surge_approval_callback(surge_callback)
             log.info("급등주 승인 콜백 등록 완료")
         
+        # 모니터링 GUI 창 생성 및 표시
+        log.info("📊 실시간 모니터링 GUI 창 생성 중...")
+        monitor_window = MonitorWindow(engine)
+        monitor_window.show()
+        monitor_window.add_log("✅ 자동매매 프로그램 시작", "green")
+        monitor_window.add_log(f"📋 관심 종목: {', '.join(Config.WATCH_LIST)}", "blue")
+        if Config.ENABLE_SURGE_DETECTION:
+            monitor_window.add_log("🚀 급등주 감지 활성화", "orange")
+        
+        # 엔진에 모니터 창 설정 (이벤트를 GUI에 전달)
+        engine.set_monitor_window(monitor_window)
+        
+        log.success("✅ 모니터링 GUI 창 표시 완료!")
+        
         # 안내 메시지
         print("\n" + "=" * 60)
         print("자동매매가 시작됩니다.")
@@ -224,8 +279,20 @@ def main():
         log.info("📡 PyQt 이벤트 루프 실행 중... (GUI 응답 유지)")
         log.info("   종료하려면 Ctrl+C를 누르세요.")
         
+        # Ctrl+C (SIGINT) 처리를 위한 signal 핸들러 설정
+        def signal_handler(signum, frame):
+            log.warning("\n🛑 Ctrl+C 감지 - 프로그램을 안전하게 종료합니다...")
+            app.quit()
+        
+        signal.signal(signal.SIGINT, signal_handler)
+        
+        # Python의 시그널 처리를 허용하기 위한 타이머 (500ms마다 Python 코드 실행)
+        timer = QTimer()
+        timer.start(500)
+        timer.timeout.connect(lambda: None)  # 빈 함수 실행으로 Python 시그널 체크
+        
         # 이벤트 루프 실행
-        app.exec_()
+        exit_code = app.exec_()
         
         # 종료 처리
         log.info("자동매매를 종료합니다...")
@@ -235,7 +302,7 @@ def main():
         # 최종 통계
         log.success("✅ 프로그램을 정상 종료했습니다.")
         
-        return 0
+        return exit_code
         
     except KeyboardInterrupt:
         log.info("\n사용자가 프로그램을 중단했습니다.")
