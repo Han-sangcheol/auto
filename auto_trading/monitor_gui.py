@@ -19,12 +19,20 @@ window.show()
 
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-    QLabel, QTableWidget, QTableWidgetItem, QTextEdit, QGroupBox
+    QLabel, QTableWidget, QTableWidgetItem, QTextEdit, QGroupBox, QTabWidget
 )
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QFont, QColor
 from datetime import datetime
 from typing import Optional
+
+# 차트 위젯 (선택적 로드)
+try:
+    from chart_widget import ChartWidget
+    CHART_AVAILABLE = True
+except ImportError:
+    CHART_AVAILABLE = False
+    print("⚠️  chart_widget.py를 로드할 수 없습니다.")
 
 
 class MonitorWindow(QMainWindow):
@@ -33,6 +41,7 @@ class MonitorWindow(QMainWindow):
     def __init__(self, trading_engine, parent=None):
         super().__init__(parent)
         self.trading_engine = trading_engine
+        self.chart_widget = None  # 차트 위젯 참조
         self.init_ui()
         self.setup_timer()
         
@@ -46,9 +55,33 @@ class MonitorWindow(QMainWindow):
         self.setCentralWidget(main_widget)
         main_layout = QVBoxLayout(main_widget)
         
+        # 탭 위젯 생성
+        self.tab_widget = QTabWidget()
+        
+        # 탭 1: 모니터링
+        monitoring_tab = self.create_monitoring_tab()
+        self.tab_widget.addTab(monitoring_tab, "📊 모니터링")
+        
+        # 탭 2: 차트 (pyqtgraph 사용 가능 시)
+        if CHART_AVAILABLE:
+            self.chart_widget = ChartWidget()
+            self.tab_widget.addTab(self.chart_widget, "📈 차트")
+            # 초기 관심 종목 등록
+            self.initialize_chart_stocks()
+        
+        main_layout.addWidget(self.tab_widget)
+        
+        # 스타일 적용
+        self.apply_styles()
+    
+    def create_monitoring_tab(self) -> QWidget:
+        """모니터링 탭 생성"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        
         # 상단: 계좌 정보
         account_group = self.create_account_group()
-        main_layout.addWidget(account_group)
+        layout.addWidget(account_group)
         
         # 중단: 보유 종목 / 급등주 현황
         middle_layout = QHBoxLayout()
@@ -59,14 +92,31 @@ class MonitorWindow(QMainWindow):
         surge_group = self.create_surge_group()
         middle_layout.addWidget(surge_group)
         
-        main_layout.addLayout(middle_layout)
+        layout.addLayout(middle_layout)
         
         # 하단: 실시간 로그
         log_group = self.create_log_group()
-        main_layout.addWidget(log_group)
+        layout.addWidget(log_group)
         
-        # 스타일 적용
-        self.apply_styles()
+        return tab
+    
+    def initialize_chart_stocks(self):
+        """차트에 초기 관심 종목 등록"""
+        if not self.chart_widget:
+            return
+        
+        # 관심 종목 추가
+        for stock_code in self.trading_engine.watch_list:
+            # 종목명 조회 시도
+            stock_name = stock_code  # 기본값
+            try:
+                # 실제로는 kiwoom API에서 종목명 조회 가능
+                # 여기서는 간단히 코드만 사용
+                pass
+            except:
+                pass
+            
+            self.chart_widget.add_stock(stock_code, stock_name)
         
     def create_account_group(self) -> QGroupBox:
         """계좌 정보 그룹 생성"""
@@ -254,6 +304,10 @@ class MonitorWindow(QMainWindow):
                     prices = self.trading_engine.price_history[stock_code]
                     if prices:
                         current_price = prices[-1]
+                        
+                        # 차트에 데이터 업데이트
+                        if self.chart_widget:
+                            self.chart_widget.update_price_data(stock_code, current_price)
                 
                 # 수익률 계산
                 profit_rate = ((current_price - position.buy_price) / position.buy_price) * 100
@@ -272,6 +326,16 @@ class MonitorWindow(QMainWindow):
                 else:
                     profit_item.setForeground(QColor(0, 0, 255))  # 파란색
                 self.holdings_table.setItem(row, 5, profit_item)
+            
+            # 전체 수익률 차트 업데이트
+            if self.chart_widget and positions:
+                stats = self.trading_engine.risk_manager.get_statistics()
+                total_profit_loss = stats.get('total_profit_loss', 0)
+                initial_balance = stats.get('initial_balance', 10000000)
+                profit_rate = (total_profit_loss / initial_balance) * 100 if initial_balance > 0 else 0
+                
+                # 누적 수익률 업데이트
+                self.chart_widget.update_profit_data(profit_rate, profit_rate)
                 
         except Exception as e:
             self.add_log(f"보유 종목 업데이트 오류: {e}", "red")

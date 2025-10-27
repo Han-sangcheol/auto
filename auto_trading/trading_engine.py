@@ -155,6 +155,17 @@ class TradingEngine:
             except:
                 pass  # GUI 로그 실패해도 무시
     
+    def _add_chart_marker(self, stock_code: str, trade_type: str, price: float):
+        """차트에 매매 마커 추가 (모니터 창 차트가 있을 때만)"""
+        if self.monitor_window and hasattr(self.monitor_window, 'chart_widget'):
+            try:
+                if self.monitor_window.chart_widget:
+                    self.monitor_window.chart_widget.add_trade_marker(
+                        stock_code, trade_type, price
+                    )
+            except:
+                pass  # 차트 마커 실패해도 무시
+    
     def initialize(self) -> bool:
         """
         엔진 초기화
@@ -665,6 +676,9 @@ class TradingEngine:
                         "green"
                     )
                     
+                    # 차트 마커 추가
+                    self._add_chart_marker(stock_code, "buy", current_price)
+                    
                     # 알림 전송
                     if self.notifier:
                         self.notifier.notify_trade(
@@ -747,6 +761,9 @@ class TradingEngine:
                     log.success(f"   사유: {signal_result['reason']}")
                     log.success(f"   시각: {datetime.now().strftime('%H:%M:%S')}")
                     log.success("=" * 70)
+                    
+                    # 차트 마커 추가
+                    self._add_chart_marker(stock_code, "sell", current_price)
                     
                     # 알림 전송
                     if self.notifier:
@@ -853,6 +870,9 @@ class TradingEngine:
                     log.success(f"   사유: {reason}")
                     log.success(f"   시각: {datetime.now().strftime('%H:%M:%S')}")
                     log.success("=" * 70)
+                    
+                    # 차트 마커 추가
+                    self._add_chart_marker(stock_code, "sell", sell_price)
                     
                     # 알림 전송
                     if self.notifier:
