@@ -36,6 +36,7 @@ from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 from logger import log
 from config import Config
+from fee_calculator import FeeCalculator
 
 
 class Position:
@@ -121,6 +122,12 @@ class RiskManager:
         self.current_balance = 0
         self.daily_start_balance = 0
         self.max_stocks = Config.MAX_STOCKS
+        
+        # 수수료 계산기 초기화
+        self.fee_calculator = FeeCalculator(use_simulation=Config.USE_SIMULATION)
+        
+        # 수수료 통계
+        self.total_fees_paid = 0  # 총 지불한 수수료
         
         log.info("리스크 관리자 초기화 완료")
     
@@ -271,13 +278,20 @@ class RiskManager:
             log.warning(f"포지션 추가 실패: {reason}")
             return None
         
+        # 매수 금액 및 수수료 계산
+        buy_amount = quantity * entry_price
+        buy_fee = self.fee_calculator.calculate_buy_fee(buy_amount)
+        total_cost = buy_amount + buy_fee
+        
         # 포지션 생성
         position = Position(stock_code, stock_name, quantity, entry_price)
         self.positions[stock_code] = position
         
-        # 잔고 차감
-        cost = quantity * entry_price
-        self.current_balance -= cost
+        # 잔고 차감 (매수 금액 + 수수료)
+        self.current_balance -= total_cost
+        
+        # 수수료 누적
+        self.total_fees_paid += buy_fee
         
         # 거래 기록
         trade = Trade(stock_code, 'BUY', quantity, entry_price)
@@ -285,8 +299,17 @@ class RiskManager:
         
         log.success(
             f"✅ 포지션 추가: {stock_code} {quantity}주 @ {entry_price:,}원 | "
+            f"매수금액: {buy_amount:,}원 | 수수료: {buy_fee:,}원 | "
             f"잔고: {self.current_balance:,}원"
         )
+        
+        # 수수료 정보 상세 로그
+        if buy_fee > 0:
+            fee_info = self.fee_calculator.get_fee_info(entry_price, quantity)
+            log.info(
+                f"   💰 수수료 상세: 손익분기점 {fee_info['break_even_price']:,}원 "
+                f"({fee_info['break_even_rate']:+.2f}%)"
+            )
         
         return position
     
@@ -305,7 +328,7 @@ class RiskManager:
             reason: 매도 사유
         
         Returns:
-            손익 금액 또는 None
+            순 손익 금액 (수수료 차감 후) 또는 None
         """
         if stock_code not in self.positions:
             log.warning(f"포지션 없음: {stock_code}")
@@ -313,34 +336,57 @@ class RiskManager:
         
         position = self.positions[stock_code]
         
-        # 손익 계산
-        position.update_price(sell_price)
-        profit_loss = position.get_profit_loss()
-        profit_loss_pct = position.get_profit_loss_percent()
+        # 매도 금액 및 수수료 계산
+        sell_amount = position.quantity * sell_price
+        sell_fee = self.fee_calculator.calculate_sell_fee(sell_amount)
+        net_revenue = sell_amount - sell_fee
         
-        # 잔고 증가
-        revenue = position.quantity * sell_price
-        self.current_balance += revenue
+        # 손익 계산 (수수료 제외)
+        position.update_price(sell_price)
+        gross_profit_loss = position.get_profit_loss()
+        gross_profit_loss_pct = position.get_profit_loss_percent()
+        
+        # 실제 순 손익 (매수 시 수수료도 고려)
+        buy_amount = position.quantity * position.buy_price
+        buy_fee = self.fee_calculator.calculate_buy_fee(buy_amount)
+        net_profit_loss = gross_profit_loss - buy_fee - sell_fee
+        net_profit_loss_pct = (net_profit_loss / buy_amount) * 100
+        
+        # 잔고 증가 (매도 금액 - 수수료)
+        self.current_balance += net_revenue
+        
+        # 수수료 누적
+        self.total_fees_paid += sell_fee
         
         # 거래 기록
         trade = Trade(stock_code, 'SELL', position.quantity, sell_price)
-        trade.profit_loss = profit_loss
+        trade.profit_loss = net_profit_loss  # 순 손익 저장
         self.trades.append(trade)
         
         # 포지션 제거
         del self.positions[stock_code]
         
         # 로그
-        emoji = "🟢" if profit_loss >= 0 else "🔴"
+        emoji = "🟢" if net_profit_loss >= 0 else "🔴"
         log.success(
-            f"{emoji} 포지션 청산: {stock_code} {position.quantity}주 @ {sell_price:,}원 | "
-            f"손익: {profit_loss:+,}원 ({profit_loss_pct:+.2f}%) | "
-            f"잔고: {self.current_balance:,}원"
+            f"{emoji} 포지션 청산: {stock_code} {position.quantity}주 @ {sell_price:,}원"
+        )
+        log.success(
+            f"   매도금액: {sell_amount:,}원 | 매도비용: {sell_fee:,}원"
+        )
+        log.success(
+            f"   명목손익: {gross_profit_loss:+,}원 ({gross_profit_loss_pct:+.2f}%)"
+        )
+        log.success(
+            f"   순손익: {net_profit_loss:+,}원 ({net_profit_loss_pct:+.2f}%) [수수료 차감]"
+        )
+        log.success(
+            f"   잔고: {self.current_balance:,}원"
         )
         if reason:
-            log.info(f"  사유: {reason}")
+            log.info(f"   사유: {reason}")
         
-        return profit_loss
+        return net_profit_loss
     
     def update_position_price(self, stock_code: str, current_price: int):
         """
@@ -391,6 +437,9 @@ class RiskManager:
         winning_trades = [t for t in sell_trades if t.profit_loss > 0]
         win_rate = (len(winning_trades) / len(sell_trades) * 100) if sell_trades else 0
         
+        # 수수료 비율
+        fee_rate = (self.total_fees_paid / self.initial_balance * 100) if self.initial_balance > 0 else 0
+        
         return {
             'initial_balance': self.initial_balance,
             'current_balance': self.current_balance,
@@ -402,7 +451,9 @@ class RiskManager:
             'sell_trades': len(sell_trades),
             'winning_trades': len(winning_trades),
             'win_rate': win_rate,
-            'positions_count': len(self.positions)
+            'positions_count': len(self.positions),
+            'total_fees_paid': self.total_fees_paid,
+            'fee_rate': fee_rate
         }
     
     def print_status(self):
@@ -417,6 +468,7 @@ class RiskManager:
         print(f"주식 평가:   {stats['stock_value']:>15,}원")
         print(f"총 평가액:   {stats['total_value']:>15,}원")
         print(f"총 손익:     {stats['total_profit_loss']:>+15,}원 ({stats['total_profit_loss_pct']:+.2f}%)")
+        print(f"총 수수료:   {stats['total_fees_paid']:>15,}원 ({stats['fee_rate']:.3f}%)")
         print(f"\n총 거래:     {stats['total_trades']:>15}건")
         print(f"매도 거래:   {stats['sell_trades']:>15}건")
         print(f"승리 거래:   {stats['winning_trades']:>15}건")

@@ -57,6 +57,14 @@ class KiwoomAPI:
         self.request_count = 0  # 요청 카운트
         self.request_history = []  # 최근 요청 시간 기록
         
+        # 주문 제한 관리
+        self.last_order_time = 0
+        self.order_delay = 0.3  # 주문 간 최소 간격 (초당 최대 3건)
+        self.order_count_today = 0  # 일일 주문 카운트
+        self.order_history = []  # 최근 주문 시간 기록 (1초 내)
+        self.max_orders_per_day = 100  # 일일 최대 주문 횟수
+        self.max_orders_per_second = 3  # 초당 최대 주문 횟수
+        
         # 데이터 저장
         self.data_cache = {}
         
@@ -140,6 +148,66 @@ class KiwoomAPI:
             log.error(f"로그인 중 오류 발생: {e}")
             return False
     
+    def reconnect(self) -> bool:
+        """
+        API 재연결 시도
+        
+        Returns:
+            재연결 성공 여부
+        """
+        try:
+            log.warning("🔄 API 재연결 시도 중...")
+            
+            # 기존 연결 해제
+            if self.is_connected:
+                try:
+                    self.ocx.dynamicCall("CommTerminate()")
+                    time.sleep(1)
+                except:
+                    pass
+            
+            self.is_connected = False
+            
+            # 재로그인
+            success = self.login()
+            
+            if success:
+                log.success("✅ API 재연결 성공!")
+            else:
+                log.error("❌ API 재연결 실패")
+            
+            return success
+            
+        except Exception as e:
+            log.error(f"API 재연결 중 오류: {e}")
+            return False
+    
+    def get_connection_status(self) -> Dict:
+        """
+        연결 상태 정보 반환
+        
+        Returns:
+            연결 상태 딕셔너리
+        """
+        try:
+            connect_state = self.ocx.dynamicCall("GetConnectState()")
+            
+            return {
+                'is_connected': self.is_connected and connect_state == 1,
+                'connect_state': connect_state,
+                'account_number': self.account_number,
+                'has_account': self.account_number is not None,
+            }
+        except Exception as e:
+            log.error(f"연결 상태 조회 중 오류: {e}")
+            return {
+                'is_connected': False,
+                'connect_state': 0,
+                'account_number': None,
+                'has_account': False,
+                'error': str(e)
+            }
+    
     def _on_event_connect(self, err_code):
         """로그인 이벤트 처리"""
         if err_code == 0:
@@ -196,6 +264,87 @@ class KiwoomAPI:
         # 통계 로그 (100건마다)
         if self.request_count % 100 == 0:
             log.info(f"📊 API 요청 통계: 총 {self.request_count}건")
+    
+    def _wait_for_order(self) -> bool:
+        """
+        주문 제한 준수
+        
+        키움 API 주문 제한:
+        - 초당 5건 (공식)
+        - 우리 제한: 초당 3건 (안전 마진)
+        - 일일 100건 제한 (안전한 운영)
+        
+        Returns:
+            주문 가능 여부
+        """
+        import time
+        current_time = time.time()
+        
+        # 일일 주문 한도 체크
+        if self.order_count_today >= self.max_orders_per_day:
+            log.error(
+                f"⛔ 일일 주문 한도 초과: {self.order_count_today}/{self.max_orders_per_day}건"
+            )
+            return False
+        
+        # 1초 이내의 최근 주문만 유지
+        self.order_history = [
+            t for t in self.order_history 
+            if current_time - t < 1.0
+        ]
+        
+        # 1초 내에 3건 이상이면 대기
+        if len(self.order_history) >= self.max_orders_per_second:
+            oldest_order = min(self.order_history)
+            wait_time = 1.0 - (current_time - oldest_order) + 0.1  # 여유 0.1초
+            if wait_time > 0:
+                log.warning(f"⏳ 주문 과부하 방지 대기: {wait_time:.1f}초")
+                time.sleep(wait_time)
+                current_time = time.time()
+                # 대기 후 히스토리 재정리
+                self.order_history = [
+                    t for t in self.order_history 
+                    if current_time - t < 1.0
+                ]
+        
+        # 최소 간격 보장 (0.3초)
+        elapsed = current_time - self.last_order_time
+        if elapsed < self.order_delay:
+            time.sleep(self.order_delay - elapsed)
+        
+        # 주문 시간 기록
+        self.last_order_time = time.time()
+        self.order_history.append(self.last_order_time)
+        self.order_count_today += 1
+        
+        # 통계 로그 (10건마다)
+        if self.order_count_today % 10 == 0:
+            log.info(
+                f"📊 주문 통계: 오늘 {self.order_count_today}건 "
+                f"(한도: {self.max_orders_per_day}건)"
+            )
+        
+        return True
+    
+    def reset_daily_order_count(self):
+        """일일 주문 카운트 리셋 (장 시작 시 호출)"""
+        self.order_count_today = 0
+        self.order_history = []
+        log.info("📊 일일 주문 카운트 리셋")
+    
+    def get_order_statistics(self) -> Dict:
+        """
+        주문 통계 정보 반환
+        
+        Returns:
+            주문 통계 딕셔너리
+        """
+        return {
+            'order_count_today': self.order_count_today,
+            'max_orders_per_day': self.max_orders_per_day,
+            'remaining_orders': self.max_orders_per_day - self.order_count_today,
+            'orders_per_second': len(self.order_history)
+        }
     
     def get_balance(self) -> Dict:
         """
@@ -440,78 +589,142 @@ class KiwoomAPI:
         stock_code: str,
         quantity: int,
         price: int = 0,
-        order_type: str = "00"
+        order_type: str = "00",
+        max_retries: int = 3
     ) -> Optional[str]:
         """
-        매수 주문
+        매수 주문 (재시도 로직 포함)
         
         Args:
             stock_code: 종목코드
             quantity: 수량
             price: 가격 (0: 시장가)
             order_type: 주문타입 (00: 지정가, 03: 시장가)
+            max_retries: 최대 재시도 횟수
         
         Returns:
             주문번호 또는 None
         """
-        try:
-            if price == 0:
-                order_type = "03"  # 시장가
-            
-            ret = self.ocx.dynamicCall(
-                "SendOrder(QString, QString, QString, int, QString, int, int, QString, QString)",
-                ["매수", "0101", self.account_number, 1, stock_code, quantity, price, order_type, self.account_password]
-            )
-            
-            if ret == 0:
-                log.success(f"매수 주문 전송 성공: {stock_code} {quantity}주 @ {price}원")
-                return "주문전송완료"
-            else:
-                log.error(f"매수 주문 실패: {ret}")
-                return None
-                
-        except Exception as e:
-            log.error(f"매수 주문 중 오류: {e}")
+        # 주문 제한 체크
+        if not self._wait_for_order():
+            log.error(f"❌ 주문 제한 초과 - 매수 주문 불가: {stock_code}")
             return None
+        
+        for attempt in range(max_retries):
+            try:
+                if price == 0:
+                    order_type = "03"  # 시장가
+                
+                ret = self.ocx.dynamicCall(
+                    "SendOrder(QString, QString, QString, int, QString, int, int, QString, QString)",
+                    ["매수", "0101", self.account_number, 1, stock_code, quantity, price, order_type, self.account_password]
+                )
+                
+                if ret == 0:
+                    log.success(
+                        f"✅ 매수 주문 전송 성공: {stock_code} {quantity}주 @ "
+                        f"{price:,}원 (시도: {attempt + 1}/{max_retries})"
+                    )
+                    return "주문전송완료"
+                else:
+                    log.error(f"❌ 매수 주문 실패 (코드: {ret}): {stock_code}")
+                    
+                    # 재시도 가능한 오류인지 확인
+                    if ret in [-308, -307]:  # 주문 가능 수량 초과 등
+                        log.error("   재시도 불가능한 오류 - 중단")
+                        return None
+                    
+                    if attempt < max_retries - 1:
+                        wait_time = (attempt + 1) * 0.5  # 0.5초, 1초, 1.5초...
+                        log.warning(f"   ⏳ {wait_time}초 후 재시도...")
+                        time.sleep(wait_time)
+                    else:
+                        log.error(f"   ⛔ 최대 재시도 횟수 초과 ({max_retries}회)")
+                        return None
+                    
+            except Exception as e:
+                log.error(f"❌ 매수 주문 중 오류 (시도: {attempt + 1}/{max_retries}): {e}")
+                
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 0.5
+                    log.warning(f"   ⏳ {wait_time}초 후 재시도...")
+                    time.sleep(wait_time)
+                else:
+                    log.error(f"   ⛔ 최대 재시도 횟수 초과 ({max_retries}회)")
+                    return None
+        
+        return None
     
     def sell_order(
         self,
         stock_code: str,
         quantity: int,
         price: int = 0,
-        order_type: str = "00"
+        order_type: str = "00",
+        max_retries: int = 3
     ) -> Optional[str]:
         """
-        매도 주문
+        매도 주문 (재시도 로직 포함)
         
         Args:
             stock_code: 종목코드
             quantity: 수량
             price: 가격 (0: 시장가)
             order_type: 주문타입 (00: 지정가, 03: 시장가)
+            max_retries: 최대 재시도 횟수
         
         Returns:
             주문번호 또는 None
         """
-        try:
-            if price == 0:
-                order_type = "03"  # 시장가
-            
-            ret = self.ocx.dynamicCall(
-                "SendOrder(QString, QString, QString, int, QString, int, int, QString, QString)",
-                ["매도", "0101", self.account_number, 2, stock_code, quantity, price, order_type, self.account_password]
-            )
-            
-            if ret == 0:
-                log.success(f"매도 주문 전송 성공: {stock_code} {quantity}주 @ {price}원")
-                return "주문전송완료"
-            else:
-                log.error(f"매도 주문 실패: {ret}")
-                return None
-                
-        except Exception as e:
-            log.error(f"매도 주문 중 오류: {e}")
+        # 주문 제한 체크
+        if not self._wait_for_order():
+            log.error(f"❌ 주문 제한 초과 - 매도 주문 불가: {stock_code}")
             return None
+        
+        for attempt in range(max_retries):
+            try:
+                if price == 0:
+                    order_type = "03"  # 시장가
+                
+                ret = self.ocx.dynamicCall(
+                    "SendOrder(QString, QString, QString, int, QString, int, int, QString, QString)",
+                    ["매도", "0101", self.account_number, 2, stock_code, quantity, price, order_type, self.account_password]
+                )
+                
+                if ret == 0:
+                    log.success(
+                        f"✅ 매도 주문 전송 성공: {stock_code} {quantity}주 @ "
+                        f"{price:,}원 (시도: {attempt + 1}/{max_retries})"
+                    )
+                    return "주문전송완료"
+                else:
+                    log.error(f"❌ 매도 주문 실패 (코드: {ret}): {stock_code}")
+                    
+                    # 재시도 불가능한 오류 체크
+                    if ret in [-308, -307]:  # 잔고 부족 등
+                        log.error("   재시도 불가능한 오류 - 중단")
+                        return None
+                    
+                    if attempt < max_retries - 1:
+                        wait_time = (attempt + 1) * 0.5
+                        log.warning(f"   ⏳ {wait_time}초 후 재시도...")
+                        time.sleep(wait_time)
+                    else:
+                        log.error(f"   ⛔ 최대 재시도 횟수 초과 ({max_retries}회)")
+                        return None
+                    
+            except Exception as e:
+                log.error(f"❌ 매도 주문 중 오류 (시도: {attempt + 1}/{max_retries}): {e}")
+                
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 0.5
+                    log.warning(f"   ⏳ {wait_time}초 후 재시도...")
+                    time.sleep(wait_time)
+                else:
+                    log.error(f"   ⛔ 최대 재시도 횟수 초과 ({max_retries}회)")
+                    return None
+        
+        return None
     
     def set_real_data_callback(self, callback: Callable):
         """

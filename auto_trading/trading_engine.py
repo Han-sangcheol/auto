@@ -59,6 +59,30 @@ from surge_detector import SurgeDetector
 from logger import log
 from config import Config
 
+# 뉴스 분석 및 알림 시스템 (선택적 로드)
+try:
+    from news_crawler import NewsCrawler
+    from sentiment_analyzer import SentimentAnalyzer
+    from news_strategy import NewsBasedStrategy
+    NEWS_AVAILABLE = True
+except ImportError:
+    NEWS_AVAILABLE = False
+    log.warning("뉴스 분석 모듈을 로드할 수 없습니다. (패키지 미설치)")
+
+try:
+    from notification import Notifier
+    NOTIFICATION_AVAILABLE = True
+except ImportError:
+    NOTIFICATION_AVAILABLE = False
+    log.warning("알림 시스템을 로드할 수 없습니다. (win10toast 미설치)")
+
+try:
+    from health_monitor import HealthMonitor
+    HEALTH_MONITOR_AVAILABLE = True
+except ImportError:
+    HEALTH_MONITOR_AVAILABLE = False
+    log.warning("헬스 모니터를 로드할 수 없습니다. (psutil 미설치)")
+
 
 class TradingEngine:
     """자동매매 엔진 클래스"""
@@ -92,6 +116,18 @@ class TradingEngine:
         self.surge_add_lock = threading.Lock()  # 급등주 추가 시 동기화
         self.surge_processing = False  # 급등주 처리 중 플래그
         
+        # 뉴스 분석 (선택적)
+        self.news_enabled = False
+        self.news_crawler = None
+        self.sentiment_analyzer = None
+        self.news_strategy = None
+        
+        # 알림 시스템 (선택적)
+        self.notifier = None
+        
+        # 헬스 모니터 (선택적)
+        self.health_monitor = None
+        
         # GUI 모니터 창 (선택적)
         self.monitor_window = None
         
@@ -99,6 +135,11 @@ class TradingEngine:
         self.check_timer = QTimer()
         self.check_timer.timeout.connect(self._periodic_check)
         self.check_timer.setInterval(5000)  # 5초마다 체크
+        
+        # 에러 복구 카운트
+        self.error_count = 0
+        self.max_errors = 5
+        self.last_error_time = None
         
         log.info("자동매매 엔진 초기화 완료")
     
@@ -172,6 +213,54 @@ class TradingEngine:
                     log.warning("급등주 감지 기능 초기화 실패 - 기능 비활성화")
                     self.surge_detector = None
             
+            # 5. 일일 주문 카운트 리셋
+            self.kiwoom.reset_daily_order_count()
+            
+            # 6. 뉴스 분석 초기화 (선택적)
+            if NEWS_AVAILABLE and hasattr(Config, 'ENABLE_NEWS_ANALYSIS'):
+                try:
+                    if Config.ENABLE_NEWS_ANALYSIS:
+                        log.info("뉴스 분석 기능 초기화 중...")
+                        self.news_crawler = NewsCrawler()
+                        self.sentiment_analyzer = SentimentAnalyzer()
+                        self.news_strategy = NewsBasedStrategy(
+                            self.news_crawler,
+                            self.sentiment_analyzer
+                        )
+                        self.news_enabled = True
+                        log.success("뉴스 분석 기능 활성화 완료")
+                except Exception as e:
+                    log.warning(f"뉴스 분석 초기화 실패: {e}")
+                    self.news_enabled = False
+            
+            # 7. 알림 시스템 초기화 (선택적)
+            if NOTIFICATION_AVAILABLE:
+                try:
+                    self.notifier = Notifier(
+                        enable_sound=getattr(Config, 'ENABLE_SOUND_ALERTS', True)
+                    )
+                    log.success("알림 시스템 활성화 완료")
+                except Exception as e:
+                    log.warning(f"알림 시스템 초기화 실패: {e}")
+                    self.notifier = None
+            
+            # 8. 헬스 모니터 초기화 (선택적)
+            if HEALTH_MONITOR_AVAILABLE:
+                try:
+                    check_interval = getattr(Config, 'HEALTH_CHECK_INTERVAL', 60)
+                    enable_auto_recovery = getattr(Config, 'ENABLE_AUTO_RECOVERY', True)
+                    
+                    self.health_monitor = HealthMonitor(
+                        trading_engine=self,
+                        kiwoom_api=self.kiwoom,
+                        check_interval=check_interval,
+                        enable_auto_recovery=enable_auto_recovery
+                    )
+                    log.success(f"헬스 모니터 활성화 완료 (체크 간격: {check_interval}초)")
+                except Exception as e:
+                    log.warning(f"헬스 모니터 초기화 실패: {e}")
+                    self.health_monitor = None
+            
             log.success("자동매매 엔진 초기화 완료")
             return True
             
@@ -202,6 +291,20 @@ class TradingEngine:
         # 급등주 모니터링 시작
         if self.surge_detector:
             self.surge_detector.start_monitoring()
+        
+        # 뉴스 자동 갱신 시작
+        if self.news_enabled and self.news_crawler:
+            interval = getattr(Config, 'NEWS_UPDATE_INTERVAL', 300)
+            self.news_crawler.start_auto_update(interval=interval)
+            log.info(f"뉴스 자동 갱신 시작 ({interval}초 간격)")
+        
+        # 시작 알림
+        if self.notifier:
+            self.notifier.notify_system_start()
+        
+        # 헬스 모니터링 시작
+        if self.health_monitor:
+            self.health_monitor.start()
         
         # 현재 상태 출력
         self.risk_manager.print_status()
@@ -322,6 +425,21 @@ class TradingEngine:
         # 급등주 모니터링 중지
         if self.surge_detector:
             self.surge_detector.stop_monitoring()
+        
+        # 뉴스 자동 갱신 중지
+        if self.news_enabled and self.news_crawler:
+            self.news_crawler.stop_auto_update()
+            log.info("뉴스 자동 갱신 중지")
+        
+        # 헬스 모니터링 중지
+        if self.health_monitor:
+            self.health_monitor.stop()
+            # 최종 헬스 요약 출력
+            self.health_monitor.print_health_summary()
+        
+        # 종료 알림
+        if self.notifier:
+            self.notifier.notify_system_stop()
         
         log.info("🛑 자동매매 중지")
         
@@ -546,6 +664,15 @@ class TradingEngine:
                         f"✅ 매수: {stock_code} {quantity}주 @ {current_price:,}원",
                         "green"
                     )
+                    
+                    # 알림 전송
+                    if self.notifier:
+                        self.notifier.notify_trade(
+                            "매수",
+                            stock_name,
+                            quantity,
+                            current_price
+                        )
             else:
                 log.error("=" * 70)
                 log.error(f"❌ 매수 주문 실패: {stock_code}")
@@ -620,6 +747,16 @@ class TradingEngine:
                     log.success(f"   사유: {signal_result['reason']}")
                     log.success(f"   시각: {datetime.now().strftime('%H:%M:%S')}")
                     log.success("=" * 70)
+                    
+                    # 알림 전송
+                    if self.notifier:
+                        self.notifier.notify_trade(
+                            "매도",
+                            position.stock_name,
+                            position.quantity,
+                            current_price,
+                            profit_loss
+                        )
             else:
                 log.error("=" * 70)
                 log.error(f"❌ 매도 주문 실패: {stock_code}")
@@ -716,6 +853,25 @@ class TradingEngine:
                     log.success(f"   사유: {reason}")
                     log.success(f"   시각: {datetime.now().strftime('%H:%M:%S')}")
                     log.success("=" * 70)
+                    
+                    # 알림 전송
+                    if self.notifier:
+                        if reason == "손절매":
+                            self.notifier.notify_stop_loss(
+                                position.stock_name,
+                                position.quantity,
+                                position.buy_price,
+                                sell_price,
+                                abs(profit_loss)
+                            )
+                        elif reason == "익절매":
+                            self.notifier.notify_take_profit(
+                                position.stock_name,
+                                position.quantity,
+                                position.buy_price,
+                                sell_price,
+                                profit_loss
+                            )
             else:
                 log.error("=" * 70)
                 log.error(f"❌ 청산 주문 실패: {stock_code} ({reason})")
@@ -748,6 +904,15 @@ class TradingEngine:
                 log.warning("급등주 승인 콜백이 설정되지 않았습니다. 자동으로 추가합니다.")
                 self.add_surge_stock(stock_code, candidate)
                 return
+            
+            # 알림 전송
+            if self.notifier:
+                self.notifier.notify_surge(
+                    candidate.name,
+                    stock_code,
+                    candidate.current_change_rate,
+                    candidate.get_volume_ratio()
+                )
             
             # 승인 요청
             surge_info = {

@@ -214,12 +214,20 @@ class MonitorWindow(QMainWindow):
                 for p in self.trading_engine.risk_manager.positions.values()
             )
             total_asset = balance + positions_value
-            self.total_asset_label.setText(f"총 자산: {total_asset:,}원")
+            
+            # 수수료 정보 포함
+            total_fees = stats.get('total_fees_paid', 0)
+            if total_fees > 0:
+                self.total_asset_label.setText(
+                    f"총 자산: {total_asset:,}원 (수수료: {total_fees:,}원)"
+                )
+            else:
+                self.total_asset_label.setText(f"총 자산: {total_asset:,}원")
             
             # 수익률
-            total_profit = stats.get('total_profit', 0)
+            total_profit_loss = stats.get('total_profit_loss', 0)
             initial_balance = stats.get('initial_balance', 10000000)
-            profit_rate = (total_profit / initial_balance) * 100 if initial_balance > 0 else 0
+            profit_rate = (total_profit_loss / initial_balance) * 100 if initial_balance > 0 else 0
             
             self.profit_rate_label.setText(f"수익률: {profit_rate:+.2f}%")
             

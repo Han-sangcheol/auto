@@ -79,6 +79,22 @@ class Config:
     SURGE_MIN_VOLUME_RATIO = float(os.getenv('SURGE_MIN_VOLUME_RATIO', '2.0'))
     SURGE_COOLDOWN_MINUTES = int(os.getenv('SURGE_COOLDOWN_MINUTES', '30'))
     
+    # 뉴스 분석 설정 (선택적 기능)
+    ENABLE_NEWS_ANALYSIS = os.getenv('ENABLE_NEWS_ANALYSIS', 'False').lower() == 'true'
+    NEWS_UPDATE_INTERVAL = int(os.getenv('NEWS_UPDATE_INTERVAL', '300'))  # 5분
+    NEWS_MIN_COUNT = int(os.getenv('NEWS_MIN_COUNT', '3'))  # 최소 뉴스 개수
+    NEWS_BUY_THRESHOLD = int(os.getenv('NEWS_BUY_THRESHOLD', '30'))  # 매수 임계값
+    NEWS_SELL_THRESHOLD = int(os.getenv('NEWS_SELL_THRESHOLD', '-30'))  # 매도 임계값
+    
+    # 알림 설정
+    ENABLE_NOTIFICATIONS = os.getenv('ENABLE_NOTIFICATIONS', 'True').lower() == 'true'
+    ENABLE_SOUND_ALERTS = os.getenv('ENABLE_SOUND_ALERTS', 'True').lower() == 'true'
+    
+    # 헬스 모니터 설정
+    ENABLE_HEALTH_MONITOR = os.getenv('ENABLE_HEALTH_MONITOR', 'True').lower() == 'true'
+    HEALTH_CHECK_INTERVAL = int(os.getenv('HEALTH_CHECK_INTERVAL', '60'))  # 1분
+    ENABLE_AUTO_RECOVERY = os.getenv('ENABLE_AUTO_RECOVERY', 'True').lower() == 'true'
+    
     # 로깅 설정
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
     LOG_FILE_PATH = os.getenv('LOG_FILE_PATH', 'logs/trading.log')
@@ -141,6 +157,20 @@ class Config:
             print(f"  최소 상승률: {cls.SURGE_MIN_CHANGE_RATE}%")
             print(f"  최소 거래량 비율: {cls.SURGE_MIN_VOLUME_RATIO}배")
             print(f"  재감지 대기시간: {cls.SURGE_COOLDOWN_MINUTES}분")
+        print(f"\n뉴스 분석:")
+        print(f"  뉴스 분석: {'활성화' if cls.ENABLE_NEWS_ANALYSIS else '비활성화'}")
+        if cls.ENABLE_NEWS_ANALYSIS:
+            print(f"  갱신 간격: {cls.NEWS_UPDATE_INTERVAL}초")
+            print(f"  매수 임계값: {cls.NEWS_BUY_THRESHOLD}")
+            print(f"  매도 임계값: {cls.NEWS_SELL_THRESHOLD}")
+        print(f"\n알림:")
+        print(f"  알림: {'활성화' if cls.ENABLE_NOTIFICATIONS else '비활성화'}")
+        print(f"  소리: {'활성화' if cls.ENABLE_SOUND_ALERTS else '비활성화'}")
+        print(f"\n헬스 모니터:")
+        print(f"  헬스 모니터: {'활성화' if cls.ENABLE_HEALTH_MONITOR else '비활성화'}")
+        if cls.ENABLE_HEALTH_MONITOR:
+            print(f"  체크 간격: {cls.HEALTH_CHECK_INTERVAL}초")
+            print(f"  자동 복구: {'활성화' if cls.ENABLE_AUTO_RECOVERY else '비활성화'}")
         print("=" * 60)
 
 
