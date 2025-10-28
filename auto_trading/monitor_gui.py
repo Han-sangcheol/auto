@@ -81,7 +81,9 @@ class MonitorWindow(QMainWindow):
         
         # 탭 2: 차트 (pyqtgraph 사용 가능 시)
         if CHART_AVAILABLE:
-            self.chart_widget = ChartWidget()
+            # trading_engine의 database를 전달
+            database = getattr(self.trading_engine, 'database', None)
+            self.chart_widget = ChartWidget(database=database)
             self.tab_widget.addTab(self.chart_widget, "📈 차트")
             # 초기 관심 종목 등록
             self.initialize_chart_stocks()
@@ -107,6 +109,10 @@ class MonitorWindow(QMainWindow):
         # 상단: 계좌 정보
         account_group = self.create_account_group()
         layout.addWidget(account_group)
+        
+        # 컨트롤: 자동매매 시작/중지 버튼
+        control_group = self.create_control_group()
+        layout.addWidget(control_group)
         
         # 중단: 보유 종목 / 급등주 현황
         middle_layout = QHBoxLayout()
@@ -236,6 +242,67 @@ class MonitorWindow(QMainWindow):
         self.profit_rate_label = QLabel("수익률: 0.00%")
         self.profit_rate_label.setFont(QFont("맑은 고딕", 14, QFont.Bold))
         layout.addWidget(self.profit_rate_label)
+        
+        group.setLayout(layout)
+        return group
+    
+    def create_control_group(self) -> QGroupBox:
+        """자동매매 컨트롤 그룹 생성"""
+        group = QGroupBox("🎮 자동매매 제어")
+        layout = QHBoxLayout()
+        
+        # 상태 표시 레이블
+        self.trading_status_label = QLabel("⏸ 자동매매 중지됨")
+        self.trading_status_label.setFont(QFont("맑은 고딕", 12, QFont.Bold))
+        self.trading_status_label.setStyleSheet("color: gray;")
+        layout.addWidget(self.trading_status_label)
+        
+        layout.addStretch()
+        
+        # 시작 버튼
+        self.start_button = QPushButton("▶ 자동매매 시작")
+        self.start_button.setFont(QFont("맑은 고딕", 11, QFont.Bold))
+        self.start_button.setMinimumHeight(50)
+        self.start_button.setStyleSheet("""
+            QPushButton {
+                background-color: #28a745;
+                color: white;
+                border-radius: 5px;
+                padding: 10px 20px;
+            }
+            QPushButton:hover {
+                background-color: #218838;
+            }
+            QPushButton:disabled {
+                background-color: #ccc;
+                color: #666;
+            }
+        """)
+        self.start_button.clicked.connect(self.on_start_trading)
+        layout.addWidget(self.start_button)
+        
+        # 중지 버튼
+        self.stop_button = QPushButton("⏹ 자동매매 중지")
+        self.stop_button.setFont(QFont("맑은 고딕", 11, QFont.Bold))
+        self.stop_button.setMinimumHeight(50)
+        self.stop_button.setStyleSheet("""
+            QPushButton {
+                background-color: #dc3545;
+                color: white;
+                border-radius: 5px;
+                padding: 10px 20px;
+            }
+            QPushButton:hover {
+                background-color: #c82333;
+            }
+            QPushButton:disabled {
+                background-color: #ccc;
+                color: #666;
+            }
+        """)
+        self.stop_button.clicked.connect(self.on_stop_trading)
+        self.stop_button.setEnabled(False)  # 초기에는 비활성화
+        layout.addWidget(self.stop_button)
         
         group.setLayout(layout)
         return group
@@ -483,6 +550,64 @@ class MonitorWindow(QMainWindow):
                 
         except Exception as e:
             print(f"로그 추가 오류: {e}")
+    
+    def on_start_trading(self):
+        """자동매매 시작 버튼 클릭"""
+        try:
+            if not self.trading_engine.is_running:
+                self.add_log("🚀 자동매매를 시작합니다...", "green")
+                self.trading_engine.start_trading()
+                self.update_control_buttons()
+                self.add_log("✅ 자동매매가 시작되었습니다!", "green")
+            else:
+                self.add_log("⚠️ 이미 자동매매가 실행 중입니다.", "orange")
+        except Exception as e:
+            self.add_log(f"❌ 자동매매 시작 오류: {e}", "red")
+            QMessageBox.critical(self, "오류", f"자동매매 시작 중 오류가 발생했습니다:\n{e}")
+    
+    def on_stop_trading(self):
+        """자동매매 중지 버튼 클릭"""
+        try:
+            if self.trading_engine.is_running:
+                reply = QMessageBox.question(
+                    self,
+                    "자동매매 중지",
+                    "자동매매를 중지하시겠습니까?\n\n"
+                    "진행 중인 주문은 취소되지 않으며,\n"
+                    "새로운 매매 신호 생성만 중지됩니다.",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                
+                if reply == QMessageBox.Yes:
+                    self.add_log("⏸ 자동매매를 중지합니다...", "orange")
+                    self.trading_engine.stop_trading()
+                    self.update_control_buttons()
+                    self.add_log("✅ 자동매매가 중지되었습니다.", "gray")
+            else:
+                self.add_log("⚠️ 자동매매가 실행 중이 아닙니다.", "orange")
+        except Exception as e:
+            self.add_log(f"❌ 자동매매 중지 오류: {e}", "red")
+            QMessageBox.critical(self, "오류", f"자동매매 중지 중 오류가 발생했습니다:\n{e}")
+    
+    def update_control_buttons(self):
+        """컨트롤 버튼 상태 업데이트"""
+        try:
+            is_running = self.trading_engine.is_running
+            
+            # 버튼 활성화/비활성화
+            self.start_button.setEnabled(not is_running)
+            self.stop_button.setEnabled(is_running)
+            
+            # 상태 레이블 업데이트
+            if is_running:
+                self.trading_status_label.setText("▶ 자동매매 실행 중")
+                self.trading_status_label.setStyleSheet("color: green;")
+            else:
+                self.trading_status_label.setText("⏸ 자동매매 중지됨")
+                self.trading_status_label.setStyleSheet("color: gray;")
+        except Exception as e:
+            print(f"컨트롤 버튼 업데이트 오류: {e}")
     
     def closeEvent(self, event):
         """창 닫기 이벤트"""

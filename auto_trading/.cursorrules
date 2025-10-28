@@ -122,3 +122,4 @@ def calculate_sma(prices: List[float], period: int) -> Optional[float]:
 
 
 
+

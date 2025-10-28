@@ -150,7 +150,8 @@ class HealthMonitor:
         # 1. API 연결 상태 체크
         try:
             if hasattr(self.kiwoom, 'is_connected'):
-                result['api_connected'] = self.kiwoom.is_connected()
+                # is_connected는 속성(property)이므로 괄호 없이 접근
+                result['api_connected'] = self.kiwoom.is_connected
             else:
                 # 대체 방법: login_event 체크
                 result['api_connected'] = hasattr(self.kiwoom, 'login_event') and \
@@ -399,9 +400,7 @@ if __name__ == "__main__":
     class MockKiwoomAPI:
         def __init__(self):
             self.login_event = True
-        
-        def is_connected(self):
-            return True
+            self.is_connected = True  # 속성으로 변경 (실제 KiwoomAPI와 동일)
         
         def reconnect(self):
             return True

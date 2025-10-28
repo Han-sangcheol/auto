@@ -108,6 +108,27 @@ class TradingEngine:
         # 가격 데이터 저장 (종목별)
         self.price_history: Dict[str, List[float]] = defaultdict(list)
         
+        # 데이터베이스 및 1분봉 집계기 (선택적)
+        self.database = None
+        self.candle_aggregator = None
+        if Config.DB_ENABLED:
+            try:
+                from database import StockDatabase
+                from candle_aggregator import CandleAggregator
+                
+                self.database = StockDatabase(Config.DB_PATH, Config.DB_PARQUET_DIR)
+                if self.database.enabled:
+                    self.candle_aggregator = CandleAggregator(self.database)
+                    log.success("💾 데이터베이스 및 1분봉 집계기 초기화 완료")
+                else:
+                    log.warning("데이터베이스가 비활성화되었습니다.")
+            except ImportError:
+                log.warning("데이터베이스 모듈을 로드할 수 없습니다. (duckdb 미설치)")
+            except Exception as e:
+                log.error(f"데이터베이스 초기화 오류: {e}")
+        else:
+            log.info("데이터베이스 기능이 비활성화되었습니다.")
+        
         # 실행 상태
         self.is_running = False
         self.watch_list = Config.WATCH_LIST.copy()  # 복사본 사용 (동적 추가 가능)
@@ -188,9 +209,11 @@ class TradingEngine:
             
             # 로그인 후 대기 (API 안정화)
             import time
-            time.sleep(2)
+            log.info("⏳ API 안정화 대기 (3초)...")
+            time.sleep(3)
             
             # 1. 계좌 정보 조회
+            log.info("1️⃣ 계좌 정보 조회 중...")
             balance_info = self.kiwoom.get_balance()
             if not balance_info:
                 log.warning("잔고 조회 실패 - 기본값 사용 (모의투자 초기 자금)")
@@ -202,7 +225,11 @@ class TradingEngine:
             self.risk_manager.set_initial_balance(cash)
             log.info(f"계좌 잔고: {cash:,}원")
             
+            # API 호출 간격 확보
+            time.sleep(2)
+            
             # 2. 보유 종목 조회
+            log.info("2️⃣ 보유 종목 조회 중...")
             holdings = self.kiwoom.get_holdings()
             if holdings:
                 log.info(f"보유 종목: {len(holdings)}개")
@@ -217,22 +244,46 @@ class TradingEngine:
                     holding['buy_price']
                 )
             
+            # API 호출 간격 확보
+            time.sleep(1)
+            
             # 3. 실시간 시세 등록 (관심 종목)
+            log.info("3️⃣ 실시간 시세 등록 중...")
             self.kiwoom.set_real_data_callback(self.on_price_update)
+            # 🆕 호가 데이터 콜백 설정 (선제적 매수 판단)
+            self.kiwoom.callbacks['order_book_data'] = self.on_order_book_update
+            log.info("✅ 호가 데이터 콜백 설정 완료")
             self.kiwoom.register_real_data(self.watch_list)
             
-            # 4. 급등주 감지기 초기화 (옵션)
+            # API 안정화를 위한 추가 대기
+            time.sleep(2)
+            
+            # 4. 급등주 감지기 초기화 (옵션) - 재시도 로직 포함
             if Config.ENABLE_SURGE_DETECTION:
-                log.info("급등주 감지 기능 활성화 중...")
+                log.info("4️⃣ 급등주 감지 기능 활성화 중...")
                 self.surge_detector = SurgeDetector(
                     self.kiwoom,
                     self.on_surge_detected
                 )
-                if self.surge_detector.initialize():
-                    log.success("급등주 감지 기능 활성화 완료")
-                else:
-                    log.warning("급등주 감지 기능 초기화 실패 - 기능 비활성화")
-                    self.surge_detector = None
+                
+                # 재시도 로직 (최대 3회)
+                max_retries = 3
+                for attempt in range(max_retries):
+                    if attempt > 0:
+                        wait_time = 5 * attempt  # 5초, 10초
+                        log.info(f"   ⏳ 재시도 대기 ({wait_time}초)...")
+                        time.sleep(wait_time)
+                        log.info(f"   🔄 급등주 감지기 초기화 재시도 ({attempt + 1}/{max_retries})")
+                    
+                    if self.surge_detector.initialize():
+                        log.success("✅ 급등주 감지 기능 활성화 완료")
+                        break
+                    else:
+                        if attempt < max_retries - 1:
+                            log.warning(f"   ⚠️  급등주 감지 기능 초기화 실패 - 재시도 예정")
+                        else:
+                            log.warning("⚠️  급등주 감지 기능 초기화 최종 실패 - 기능 비활성화")
+                            self.surge_detector = None
             
             # 5. 일일 주문 카운트 리셋
             self.kiwoom.reset_daily_order_count()
@@ -474,6 +525,14 @@ class TradingEngine:
             # 최종 헬스 요약 출력
             self.health_monitor.print_health_summary()
         
+        # 1분봉 집계기 중지 및 데이터 저장
+        if self.candle_aggregator:
+            self.candle_aggregator.stop()
+        
+        # 데이터베이스 연결 종료
+        if self.database:
+            self.database.close()
+        
         # 스케줄러 중지
         if self.scheduler:
             self.scheduler.stop()
@@ -542,6 +601,11 @@ class TradingEngine:
             # 급등주 감지기에 데이터 전달
             if self.surge_detector and self.surge_detector.is_monitoring:
                 self.surge_detector.on_price_update(stock_code, price_data)
+            
+            # 데이터베이스에 틱 데이터 전달 (1분봉 집계)
+            if self.candle_aggregator:
+                volume = price_data.get('volume', 0)
+                self.candle_aggregator.on_tick(stock_code, current_price, volume)
             
             # 관심 종목이 아니면 매매 신호 생성 안 함
             if stock_code not in self.watch_list:
@@ -630,6 +694,29 @@ class TradingEngine:
                 
         except Exception as e:
             log.error(f"신호 처리 중 오류: {e}")
+    
+    def on_order_book_update(self, stock_code: str, order_book_data: Dict):
+        """
+        🆕 실시간 호가 데이터 처리 (선제적 매수 판단)
+        
+        Args:
+            stock_code: 종목 코드
+            order_book_data: 호가 데이터 {
+                'bid_volume': 매수 총잔량,
+                'ask_volume': 매도 총잔량,
+                'execution_strength': 체결강도
+            }
+        """
+        if not self.is_running:
+            return
+        
+        try:
+            # 급등주 감지기로 호가 데이터 전달
+            if self.surge_detector and self.surge_detector.is_monitoring:
+                self.surge_detector.on_order_book_update(stock_code, order_book_data)
+            
+        except Exception as e:
+            log.error(f"호가 데이터 처리 중 오류 ({stock_code}): {e}")
     
     def execute_buy(
         self,
@@ -964,21 +1051,13 @@ class TradingEngine:
                     candidate.get_volume_ratio()
                 )
             
-            # 승인 요청
-            surge_info = {
-                'name': candidate.name,
-                'price': candidate.current_price,
-                'change_rate': candidate.current_change_rate,
-                'volume_ratio': candidate.get_volume_ratio()
-            }
-            
-            # 콜백 호출 (별도 스레드에서)
+            # 승인 요청 (🔥 수정: candidate 객체를 직접 전달)
             def request_approval():
                 try:
-                    approved = self.surge_approval_callback(stock_code, candidate.name, surge_info)
-                    if approved:
-                        self.add_surge_stock(stock_code, candidate)
-                    else:
+                    # 콜백 함수에 stock_code와 candidate 전달
+                    approved = self.surge_approval_callback(stock_code, candidate)
+                    # 콜백에서 이미 add_surge_stock 호출하므로 여기서는 호출 안 함
+                    if not approved:
                         log.info(f"급등주 매수 거부: {candidate.name} ({stock_code})")
                 except Exception as e:
                     log.error(f"급등주 승인 처리 중 오류: {e}")
@@ -1033,59 +1112,55 @@ class TradingEngine:
                         f"상승률: {candidate.current_change_rate:+.2f}% | "
                         f"거래량: {candidate.get_volume_ratio():.2f}배"
                     )
-                    
-                    # GUI 로그 추가
+                
+                # GUI 로그 추가 (실패해도 계속 진행)
+                try:
                     self._add_gui_log(
                         f"🚀 급등주: {candidate.name} ({stock_code}) "
                         f"{candidate.current_change_rate:+.2f}% ↑",
                         "orange"
                     )
+                except Exception as gui_error:
+                    log.debug(f"GUI 로그 추가 실패 (무시): {gui_error}")
+                
+                # 실시간 시세 등록 건너뛰기
+                # → 급등주는 이미 surge_detector 후보군에 등록되어 실시간 데이터 수신 중
+                # → 추가 등록 시 블로킹 발생 위험 (PyQt COM 호출 문제)
+                log.info(f"✅ 실시간 시세: {stock_code} (surge_detector에서 이미 수신 중)")
+                
+                # 추가 완료 기록
+                self.surge_detected_stocks.add(stock_code)
+                
+                log.info(f"현재 관심 종목 수: {len(self.watch_list)}개")
+                
+                # 🔥 단타 매매: 급등주 즉시 매수 (데이터 누적 대기 없이)
+                try:
+                    log.warning("=" * 70)
+                    log.warning(f"🚀 급등주 즉시 매수 시도!")
+                    log.warning(f"   종목: {candidate.name} ({stock_code})")
+                    log.warning(f"   현재가: {candidate.current_price:,}원")
+                    log.warning(f"   상승률: {candidate.current_change_rate:+.2f}%")
+                    log.warning(f"   거래량 비율: {candidate.get_volume_ratio():.2f}배")
+                    log.warning("=" * 70)
                     
-                    # 실시간 시세 등록 (안전하게 처리)
-                    try:
-                        log.info(f"🔍 실시간 시세 등록 시도: {stock_code}")
-                        time.sleep(1.0)  # API 호출 제한 방지 (1초 대기로 증가)
-                        self.kiwoom.register_real_data([stock_code])
-                        log.info(f"✅ 실시간 시세 등록 완료: {stock_code}")
-                        time.sleep(0.5)  # 추가 안전 대기
-                    except Exception as reg_error:
-                        log.error(f"⚠️  실시간 시세 등록 실패: {stock_code} - {reg_error}")
-                        log.error(f"   에러 타입: {type(reg_error).__name__}")
-                        log.warning("   → 시세 등록은 실패했지만 급등주 추가는 계속 진행")
+                    # 즉시 매수 실행 (신호 생성 우회)
+                    signal_result = {
+                        'signal': 'BUY',
+                        'strength': 3.0,  # 급등주는 강한 신호
+                        'reason': f"급등주 감지 (상승률 {candidate.current_change_rate:+.2f}%, 거래량 {candidate.get_volume_ratio():.2f}배)"
+                    }
                     
-                    # 추가 완료 기록
-                    self.surge_detected_stocks.add(stock_code)
+                    log.info(f"🔄 execute_buy 함수 호출 준비 완료")
+                    self.execute_buy(stock_code, candidate.current_price, signal_result)
+                    log.info(f"✅ execute_buy 함수 호출 완료")
                     
-                    log.info(f"현재 관심 종목 수: {len(self.watch_list)}개")
-                    
-                    # 🔥 단타 매매: 급등주 즉시 매수 (데이터 누적 대기 없이)
-                    try:
-                        log.warning("=" * 70)
-                        log.warning(f"🚀 급등주 즉시 매수 시도!")
-                        log.warning(f"   종목: {candidate.name} ({stock_code})")
-                        log.warning(f"   현재가: {candidate.current_price:,}원")
-                        log.warning(f"   상승률: {candidate.current_change_rate:+.2f}%")
-                        log.warning(f"   거래량 비율: {candidate.get_volume_ratio():.2f}배")
-                        log.warning("=" * 70)
-                        
-                        # 즉시 매수 실행 (신호 생성 우회)
-                        signal_result = {
-                            'signal': 'BUY',
-                            'strength': 3.0,  # 급등주는 강한 신호
-                            'reason': f"급등주 감지 (상승률 {candidate.current_change_rate:+.2f}%, 거래량 {candidate.get_volume_ratio():.2f}배)"
-                        }
-                        
-                        log.info(f"🔄 execute_buy 함수 호출 준비 완료")
-                        self.execute_buy(stock_code, candidate.current_price, signal_result)
-                        log.info(f"✅ execute_buy 함수 호출 완료")
-                        
-                    except Exception as buy_error:
-                        log.error("=" * 70)
-                        log.error(f"❌ 급등주 즉시 매수 실패!")
-                        log.error(f"   종목: {candidate.name} ({stock_code})")
-                        log.error(f"   에러: {type(buy_error).__name__}: {str(buy_error)}")
-                        log.error(f"   상세: {traceback.format_exc()}")
-                        log.error("=" * 70)
+                except Exception as buy_error:
+                    log.error("=" * 70)
+                    log.error(f"❌ 급등주 즉시 매수 실패!")
+                    log.error(f"   종목: {candidate.name} ({stock_code})")
+                    log.error(f"   에러: {type(buy_error).__name__}: {str(buy_error)}")
+                    log.error(f"   상세: {traceback.format_exc()}")
+                    log.error("=" * 70)
                 
             except Exception as e:
                 log.error("=" * 70)

@@ -71,12 +71,13 @@ class Config:
     # 통합 전략 설정
     MIN_SIGNAL_STRENGTH = int(os.getenv('MIN_SIGNAL_STRENGTH', '2'))
     
-    # 급등주 감지 설정
+    # 급등주 감지 설정 (⚡ 과부하 방지 최적화 + 호가 분석)
     ENABLE_SURGE_DETECTION = os.getenv('ENABLE_SURGE_DETECTION', 'True').lower() == 'true'
     SURGE_AUTO_APPROVE = os.getenv('SURGE_AUTO_APPROVE', 'True').lower() == 'true'
-    SURGE_CANDIDATE_COUNT = int(os.getenv('SURGE_CANDIDATE_COUNT', '100'))
-    SURGE_MIN_CHANGE_RATE = float(os.getenv('SURGE_MIN_CHANGE_RATE', '5.0'))
-    SURGE_MIN_VOLUME_RATIO = float(os.getenv('SURGE_MIN_VOLUME_RATIO', '2.0'))
+    SURGE_CANDIDATE_COUNT = int(os.getenv('SURGE_CANDIDATE_COUNT', '30'))  # 100→30 (과부하 방지)
+    SURGE_MIN_CHANGE_RATE = float(os.getenv('SURGE_MIN_CHANGE_RATE', '5.0'))  # 10.0→5.0 (조건 완화)
+    SURGE_MIN_VOLUME_RATIO = float(os.getenv('SURGE_MIN_VOLUME_RATIO', '2.0'))  # 3.0→2.0 (조건 완화)
+    SURGE_MIN_BUYING_PRESSURE = float(os.getenv('SURGE_MIN_BUYING_PRESSURE', '0.0'))  # 60→0 (호가 조건 비활성화)
     SURGE_COOLDOWN_MINUTES = int(os.getenv('SURGE_COOLDOWN_MINUTES', '30'))
     
     # 뉴스 분석 설정 (선택적 기능)
@@ -101,6 +102,16 @@ class Config:
     # 로깅 설정
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
     LOG_FILE_PATH = os.getenv('LOG_FILE_PATH', 'logs/trading.log')
+    
+    # 데이터베이스 설정 (SQLite: 32/64비트 모두 지원)
+    # ⚡ 기본값 False: 실시간 성능 우선 (필요 시 .env에서 활성화)
+    DB_ENABLED = os.getenv('DB_ENABLED', 'False').lower() == 'true'
+    DB_PATH = os.getenv('DB_PATH', 'data/stocks.db')
+    DB_PARQUET_DIR = os.getenv('DB_PARQUET_DIR', 'data/csv')  # CSV 파일 저장
+    DB_CANDLE_INTERVAL = int(os.getenv('DB_CANDLE_INTERVAL', '1'))  # 분
+    DB_RETENTION_DAYS = int(os.getenv('DB_RETENTION_DAYS', '0'))  # 0=무제한
+    DB_AUTO_BACKUP = os.getenv('DB_AUTO_BACKUP', 'True').lower() == 'true'
+    DB_BACKUP_INTERVAL_DAYS = int(os.getenv('DB_BACKUP_INTERVAL_DAYS', '7'))
     
     @classmethod
     def validate(cls):
@@ -152,13 +163,14 @@ class Config:
         print(f"  RSI: 기간 {cls.RSI_PERIOD}일, 과매도 {cls.RSI_OVERSOLD}, 과매수 {cls.RSI_OVERBOUGHT}")
         print(f"  MACD: 빠른선 {cls.MACD_FAST}, 느린선 {cls.MACD_SLOW}, 시그널 {cls.MACD_SIGNAL}")
         print(f"  최소 신호 강도: {cls.MIN_SIGNAL_STRENGTH}/3")
-        print(f"\n급등주 감지:")
+        print(f"\n급등주 감지 (🆕 호가 분석 포함):")
         print(f"  급등주 감지: {'활성화' if cls.ENABLE_SURGE_DETECTION else '비활성화'}")
         if cls.ENABLE_SURGE_DETECTION:
             print(f"  자동 승인: {'활성화' if cls.SURGE_AUTO_APPROVE else '수동 승인 필요'}")
             print(f"  후보 종목 수: {cls.SURGE_CANDIDATE_COUNT}개")
             print(f"  최소 상승률: {cls.SURGE_MIN_CHANGE_RATE}%")
             print(f"  최소 거래량 비율: {cls.SURGE_MIN_VOLUME_RATIO}배")
+            print(f"  🆕 매수 압력 점수: {cls.SURGE_MIN_BUYING_PRESSURE}점 (0~100)")
             print(f"  재감지 대기시간: {cls.SURGE_COOLDOWN_MINUTES}분")
         print(f"\n뉴스 분석:")
         print(f"  뉴스 분석: {'활성화' if cls.ENABLE_NEWS_ANALYSIS else '비활성화'}")
@@ -177,6 +189,17 @@ class Config:
         
         print("\n📅 스케줄러 설정:")
         print(f"  자동 종료: {'활성화 (16:00)' if cls.ENABLE_AUTO_SHUTDOWN else '비활성화'}")
+        
+        print("\n💾 데이터베이스 (SQLite):")
+        print(f"  DB 저장: {'활성화' if cls.DB_ENABLED else '비활성화'}")
+        if cls.DB_ENABLED:
+            print(f"  DB 경로: {cls.DB_PATH}")
+            print(f"  CSV 경로: {cls.DB_PARQUET_DIR}")
+            print(f"  1분봉 간격: {cls.DB_CANDLE_INTERVAL}분")
+            print(f"  보관 기간: {'무제한' if cls.DB_RETENTION_DAYS == 0 else f'{cls.DB_RETENTION_DAYS}일'}")
+            print(f"  자동 백업: {'활성화' if cls.DB_AUTO_BACKUP else '비활성화'}")
+            if cls.DB_AUTO_BACKUP:
+                print(f"  백업 간격: {cls.DB_BACKUP_INTERVAL_DAYS}일")
         
         print("=" * 60)
 

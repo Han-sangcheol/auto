@@ -1,9 +1,15 @@
+# ==========================================
+# CleonAI 자동매매 프로그램 - 필수 패키지
+# ==========================================
+# Python 3.13 호환
+# 설치 방법: pip install -r requirements.txt
+#
+
 # 키움 API 연동
 PyQt5==5.15.9
 
-# 데이터 처리 (Python 3.11 + 32-bit compatible)
-# numpy만 사용 (pandas는 32비트 wheel 없음, numpy로 대체 구현)
-numpy==1.23.5
+# 데이터 처리 (Python 3.13 호환)
+numpy>=2.0.0
 
 # 환경 변수 관리
 python-dotenv>=1.0.0
@@ -14,6 +20,25 @@ loguru>=0.7.0
 # 날짜/시간 처리
 python-dateutil>=2.8.2
 
-# 데이터 저장 (선택사항)
+# 데이터 저장
 openpyxl>=3.1.2
+
+# 확장 기능 (Phase 2-4)
+# 뉴스 분석
+beautifulsoup4>=4.12.0
+requests>=2.31.0
+
+# Windows 알림
+win10toast>=0.9
+
+# 시스템 모니터링
+psutil>=5.9.0
+
+# 실시간 차트 (GUI)
+pyqtgraph>=0.13.3
+
+# 시계열 데이터베이스
+# duckdb>=0.9.0  # 32비트 Python 미지원
+# pyarrow>=14.0.0  # 32비트 Python 미지원
+# 대신 SQLite 사용 (Python 기본 포함, 추가 설치 불필요)
 

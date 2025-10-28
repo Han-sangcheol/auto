@@ -237,3 +237,4 @@ Python 3.11.9 (32 bit)
 - Open API 매뉴얼: KOA Studio 참고
 - Python 설치: https://www.python.org/downloads/
 
+

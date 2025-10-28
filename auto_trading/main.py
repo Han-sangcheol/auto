@@ -20,9 +20,8 @@ start.bat (더블클릭)
 import sys
 import os
 import signal
-import threading
 from datetime import datetime
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtCore import QTimer
 from kiwoom_api import KiwoomAPI
 from trading_engine import TradingEngine
@@ -49,74 +48,66 @@ def print_banner():
     print()
 
 
-def create_surge_approval_callback():
-    """급등주 승인 콜백 함수 생성"""
+def confirm_real_account(parent):
+    """
+    실계좌 모드 확인 다이얼로그
     
-    def surge_approval_callback(stock_code: str, stock_name: str, surge_info: dict) -> bool:
+    Args:
+        parent: 부모 위젯
+    
+    Returns:
+        사용자가 "예"를 선택하면 True, 아니면 False
+    """
+    reply = QMessageBox.warning(
+        parent,
+        "⚠️ 실계좌 모드 경고",
+        "<h3>실계좌 모드로 실행됩니다!</h3>"
+        "<p><b>실제 자금이 투자되며, 급등주가 자동으로 매수됩니다.</b></p>"
+        "<hr>"
+        "<p>다음 사항을 확인하세요:</p>"
+        "<ul>"
+        "<li>자동매매 전략이 충분히 검증되었습니까?</li>"
+        "<li>리스크 관리 설정이 적절합니까?</li>"
+        "<li>투자 가능한 자금이 준비되어 있습니까?</li>"
+        "</ul>"
+        "<hr>"
+        "<p><b>정말 진행하시겠습니까?</b></p>",
+        QMessageBox.Yes | QMessageBox.No,
+        QMessageBox.No
+    )
+    return reply == QMessageBox.Yes
+
+
+def create_surge_approval_callback(engine):
+    """
+    급등주 자동 승인 콜백 함수 생성 (자동 승인만 지원)
+    
+    Args:
+        engine: TradingEngine 인스턴스
+    """
+    
+    def surge_approval_callback(stock_code: str, candidate) -> bool:
         """
-        급등주 매수 승인 요청
+        급등주 자동 매수 승인 및 실행
         
         Args:
             stock_code: 종목 코드
-            stock_name: 종목명
-            surge_info: 급등 정보 {'price', 'change_rate', 'volume_ratio'}
+            candidate: SurgeCandidate 객체
         
         Returns:
-            승인 여부
+            승인 여부 (항상 True)
         """
         try:
-            # 급등 정보 출력
-            print("\n" + "=" * 70)
-            print("🚀 급등주 감지!")
-            print("=" * 70)
-            print(f"종목명:      {stock_name} ({stock_code})")
-            print(f"현재가:      {surge_info['price']:,}원")
-            print(f"상승률:      {surge_info['change_rate']:+.2f}%")
-            print(f"거래량 비율: {surge_info['volume_ratio']:.2f}배")
-            print("=" * 70)
+            # 급등 정보 로그
+            log.success(f"✅ 급등주 자동 승인: {candidate.name}")
+            log.info(f"   종목코드: {stock_code}")
+            log.info(f"   현재가: {candidate.current_price:,}원")
+            log.info(f"   상승률: {candidate.current_change_rate:+.2f}%")
+            log.info(f"   거래량 비율: {candidate.get_volume_ratio():.2f}배")
             
-            # 자동 승인 모드 확인
-            if Config.SURGE_AUTO_APPROVE:
-                log.success(f"✅ 급등주 자동 승인: {stock_name}")
-                print("⚡ 자동 승인 모드: 즉시 매수 진행")
-                print("=" * 70)
-                return True
-            
-            # 수동 승인 모드: 사용자 입력 (타임아웃 30초)
-            print("이 종목을 관심 종목에 추가하고 매수하시겠습니까?")
-            print("승인: y/yes | 거부: n/no | 시간 제한: 30초")
-            print("-" * 70)
-            
-            # 타임아웃을 위한 이벤트
-            user_input = [None]
-            input_event = threading.Event()
-            
-            def get_input():
-                try:
-                    user_input[0] = input("선택 (y/n): ").strip().lower()
-                    input_event.set()
-                except Exception as e:
-                    log.error(f"입력 오류: {e}")
-                    input_event.set()
-            
-            # 입력 스레드 시작
-            input_thread = threading.Thread(target=get_input, daemon=True)
-            input_thread.start()
-            
-            # 30초 대기
-            if input_event.wait(timeout=30):
-                # 사용자가 입력함
-                response = user_input[0]
-                if response in ['y', 'yes']:
-                    log.success(f"✅ 급등주 매수 승인: {stock_name}")
-                    return True
-                else:
-                    log.info(f"❌ 급등주 매수 거부: {stock_name}")
-                    return False
-            else:
-                # 타임아웃
-                log.warning(f"⏱️  시간 초과 (30초) - 급등주 매수 자동 거부: {stock_name}")
-                return False
+            # 매수 실행
+            engine.add_surge_stock(stock_code, candidate)
+            return True
                 
         except Exception as e:
             log.error(f"승인 콜백 오류: {e}")
@@ -154,7 +145,7 @@ def main():
     # 설정 출력
     Config.print_config()
     
-    # 모의투자 경고
+    # 모의투자/실계좌 모드 로그
     if Config.USE_SIMULATION:
         log.warning("⚠️  모의투자 모드로 실행합니다.")
         log.warning("실제 자금이 투자되지 않습니다.")
@@ -163,15 +154,11 @@ def main():
         log.critical("실제 자금이 투자됩니다. 신중하게 사용하세요!")
         
         # 급등주 자동 승인 추가 경고
-        if Config.ENABLE_SURGE_DETECTION and Config.SURGE_AUTO_APPROVE:
+        if Config.ENABLE_SURGE_DETECTION:
             log.critical("🔥 급등주 자동 승인이 활성화되어 있습니다!")
             log.critical("감지된 모든 급등주를 자동으로 매수합니다!")
         
-        # 실계좌 확인
-        response = input("\n정말 실계좌로 진행하시겠습니까? (yes 입력): ")
-        if response.lower() != 'yes':
-            log.info("사용자가 취소했습니다.")
-            return 0
+        # GUI 다이얼로그로 확인 (GUI 생성 후 처리)
     
     try:
         # PyQt 애플리케이션 생성
@@ -235,7 +222,7 @@ def main():
         
         # 급등주 승인 콜백 설정
         if Config.ENABLE_SURGE_DETECTION and engine.surge_detector:
-            surge_callback = create_surge_approval_callback()
+            surge_callback = create_surge_approval_callback(engine)  # engine 전달
             engine.set_surge_approval_callback(surge_callback)
             log.info("급등주 승인 콜백 등록 완료")
         
@@ -243,37 +230,40 @@ def main():
         log.info("📊 실시간 모니터링 GUI 창 생성 중...")
         monitor_window = MonitorWindow(engine)
         monitor_window.show()
-        monitor_window.add_log("✅ 자동매매 프로그램 시작", "green")
+        monitor_window.add_log("✅ 자동매매 프로그램 준비 완료", "green")
         monitor_window.add_log(f"📋 관심 종목: {', '.join(Config.WATCH_LIST)}", "blue")
         if Config.ENABLE_SURGE_DETECTION:
-            monitor_window.add_log("🚀 급등주 감지 활성화", "orange")
+            monitor_window.add_log("🚀 급등주 감지 활성화 (자동 승인)", "orange")
+        monitor_window.add_log("⏸ '자동매매 시작' 버튼을 눌러 시작하세요", "blue")
         
         # 엔진에 모니터 창 설정 (이벤트를 GUI에 전달)
         engine.set_monitor_window(monitor_window)
         
         log.success("✅ 모니터링 GUI 창 표시 완료!")
         
+        # 실계좌 모드일 경우 확인 다이얼로그 표시
+        if not Config.USE_SIMULATION:
+            log.info("실계좌 모드 확인 다이얼로그 표시 중...")
+            if not confirm_real_account(monitor_window):
+                log.info("사용자가 실계좌 모드를 취소했습니다.")
+                monitor_window.add_log("❌ 사용자가 실행을 취소했습니다.", "red")
+                return 0
+            else:
+                log.info("사용자가 실계좌 모드를 승인했습니다.")
+                monitor_window.add_log("✅ 실계좌 모드로 진행합니다.", "orange")
+        
         # 안내 메시지
         print("\n" + "=" * 60)
-        print("자동매매가 시작됩니다.")
+        print("GUI 창이 표시되었습니다.")
         print("=" * 60)
-        print("📊 실시간 시세를 모니터링하고 매매 신호를 생성합니다.")
-        print("🤖 신호 발생 시 자동으로 주문을 전송합니다.")
+        print("📊 GUI 창에서 '자동매매 시작' 버튼을 클릭하세요.")
         if Config.ENABLE_SURGE_DETECTION:
-            if Config.SURGE_AUTO_APPROVE:
-                print("🚀 급등주를 자동으로 감지하여 즉시 매수합니다. (자동 승인)")
-                print("⚠️  모든 급등주가 자동으로 매수됩니다!")
-            else:
-                print("🚀 급등주를 자동으로 감지하여 승인을 요청합니다. (수동 승인)")
-        print("⚠️  Ctrl+C를 눌러 언제든지 중지할 수 있습니다.")
+            print("🚀 급등주를 자동으로 감지하여 즉시 매수합니다.")
+        print("⚠️  GUI 창을 닫거나 Ctrl+C를 눌러 종료할 수 있습니다.")
         print("=" * 60)
         print()
         
-        # 사용자 확인
-        input("Enter 키를 눌러 자동매매를 시작하세요...")
-        
-        # 자동매매 시작 (논블로킹)
-        engine.start_trading()
+        # 자동매매는 GUI 버튼으로 시작 (자동 시작 제거)
         
         # PyQt 이벤트 루프 실행 (GUI 응답 유지)
         log.info("📡 PyQt 이벤트 루프 실행 중... (GUI 응답 유지)")

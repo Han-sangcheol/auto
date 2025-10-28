@@ -525,64 +525,107 @@ class KiwoomAPI:
             log.error(f"현재가 조회 중 오류: {e}")
             return None
     
-    def get_top_traded_stocks(self, count: int = 100) -> List[Dict]:
+    def get_top_traded_stocks(self, count: int = 100, max_retries: int = 3) -> List[Dict]:
         """
-        당일 거래대금 상위 종목 조회
+        당일 거래대금 상위 종목 조회 (재시도 로직 포함)
         
         Args:
             count: 조회할 종목 수 (최대 100)
+            max_retries: 최대 재시도 횟수
         
         Returns:
             거래대금 상위 종목 리스트
             [{'code': '005930', 'name': '삼성전자', 'price': 75000, 
               'change_rate': 2.5, 'volume': 15000000, 'trade_value': 1125000000000}, ...]
         """
-        try:
-            self._wait_for_request()
-            
-            # OPT10023: 거래량상위요청 (거래대금 기준으로 정렬 가능)
-            self.ocx.dynamicCall(
-                "SetInputValue(QString, QString)",
-                "시장구분",
-                "000"  # 000: 코스피, 001: 코스닥, 전체
-            )
-            self.ocx.dynamicCall(
-                "SetInputValue(QString, QString)",
-                "정렬구분",
-                "1"  # 0: 거래량, 1: 거래대금
-            )
-            self.ocx.dynamicCall(
-                "SetInputValue(QString, QString)",
-                "관리종목포함",
-                "0"  # 0: 미포함, 1: 포함
-            )
-            self.ocx.dynamicCall(
-                "SetInputValue(QString, QString)",
-                "거래량구분",
-                "0"  # 0: 전체
-            )
-            
-            self.request_event_loop = QEventLoop()
-            ret = self.ocx.dynamicCall(
-                "CommRqData(QString, QString, int, QString)",
-                "거래대금상위요청",
-                "OPT10023",
-                0,
-                "2003"
-            )
-            
-            if ret == 0:
-                self.request_event_loop.exec_()
-                top_stocks = self.data_cache.get('top_traded_stocks', [])
-                # 요청한 개수만큼만 반환
-                return top_stocks[:count]
-            else:
-                log.error(f"거래대금 상위 종목 조회 실패: {ret}")
-                return []
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    wait_time = 2 * attempt  # 2초, 4초
+                    log.info(f"   ⏳ 재시도 대기 ({wait_time}초)...")
+                    time.sleep(wait_time)
+                    log.info(f"   🔄 거래대금 상위 종목 조회 재시도 ({attempt + 1}/{max_retries})")
                 
-        except Exception as e:
-            log.error(f"거래대금 상위 종목 조회 중 오류: {e}")
-            return []
+                self._wait_for_request()
+                
+                log.info(f"📊 거래대금 상위 종목 조회 요청: 최대 {count}개")
+                
+                # OPT10023: 거래량상위요청 (거래대금 기준으로 정렬 가능)
+                self.ocx.dynamicCall(
+                    "SetInputValue(QString, QString)",
+                    "시장구분",
+                    "000"  # 000: 코스피, 001: 코스닥, 전체
+                )
+                self.ocx.dynamicCall(
+                    "SetInputValue(QString, QString)",
+                    "정렬구분",
+                    "1"  # 0: 거래량, 1: 거래대금
+                )
+                self.ocx.dynamicCall(
+                    "SetInputValue(QString, QString)",
+                    "관리종목포함",
+                    "0"  # 0: 미포함, 1: 포함
+                )
+                self.ocx.dynamicCall(
+                    "SetInputValue(QString, QString)",
+                    "거래량구분",
+                    "0"  # 0: 전체
+                )
+                
+                self.request_event_loop = QEventLoop()
+                ret = self.ocx.dynamicCall(
+                    "CommRqData(QString, QString, int, QString)",
+                    "거래대금상위요청",
+                    "OPT10023",
+                    0,
+                    "2003"
+                )
+                
+                if ret == 0:
+                    log.info("   ✅ TR 요청 성공 - 응답 대기 중...")
+                    self.request_event_loop.exec_()
+                    top_stocks = self.data_cache.get('top_traded_stocks', [])
+                    
+                    if top_stocks:
+                        log.success(f"   ✅ 거래대금 상위 종목 조회 성공: {len(top_stocks)}개")
+                        # 요청한 개수만큼만 반환
+                        result = top_stocks[:count]
+                        log.info(f"   📋 반환할 종목 수: {len(result)}개")
+                        return result
+                    else:
+                        log.warning("   ⚠️  조회 결과가 비어있습니다.")
+                        if attempt < max_retries - 1:
+                            continue
+                        return []
+                else:
+                    # 에러 코드 해석
+                    error_msg = {
+                        -200: "시세 과부하",
+                        -201: "조회 과부하",
+                        -202: "조회 과부하 (잠시 후 재시도)",
+                    }.get(ret, f"알 수 없는 오류 ({ret})")
+                    
+                    log.error(f"   ❌ TR 요청 실패: {error_msg}")
+                    
+                    if attempt < max_retries - 1:
+                        log.warning(f"   ⏳ 재시도 예정...")
+                        continue
+                    else:
+                        log.error(f"   ⛔ 최대 재시도 횟수 초과 ({max_retries}회)")
+                        return []
+                    
+            except Exception as e:
+                log.error(f"거래대금 상위 종목 조회 중 오류 (시도 {attempt + 1}/{max_retries}): {e}")
+                import traceback
+                log.error(f"상세: {traceback.format_exc()}")
+                
+                if attempt < max_retries - 1:
+                    log.warning(f"   ⏳ 재시도 예정...")
+                else:
+                    log.error(f"   ⛔ 최대 재시도 횟수 초과 ({max_retries}회)")
+                    return []
+        
+        return []
     
     def buy_order(
         self,
@@ -766,7 +809,8 @@ class KiwoomAPI:
             self._wait_for_request()
             
             screen_no = "1000"
-            fids = "9001;10;11;12;27;28"  # 현재가, 등락률, 거래량 등
+            # 🆕 호가 FID 추가: 거래량(13), 매도호가총잔량(121), 매수호가총잔량(125), 체결강도(228)
+            fids = "9001;10;11;12;13;27;28;121;125;228"  # 현재가, 등락률, 거래량, 호가 데이터
             
             code_list = ";".join(stock_codes)
             
@@ -915,6 +959,17 @@ class KiwoomAPI:
     def _on_receive_real_data(self, stock_code, real_type, real_data):
         """실시간 데이터 수신 이벤트"""
         try:
+            # 실시간 데이터 수신 로그 (디버깅용)
+            if not hasattr(self, '_real_data_count'):
+                self._real_data_count = {}
+            if stock_code not in self._real_data_count:
+                self._real_data_count[stock_code] = 0
+            self._real_data_count[stock_code] += 1
+            
+            # 처음 5번만 로그 출력
+            if self._real_data_count[stock_code] <= 5:
+                log.info(f"🔔 실시간 데이터 수신: {stock_code} | 유형: {real_type} [수신 #{self._real_data_count[stock_code]}]")
+            
             if real_type == "주식체결":
                 current_price = self.ocx.dynamicCall(
                     "GetCommRealData(QString, int)",
@@ -936,12 +991,60 @@ class KiwoomAPI:
                     'volume': int(volume),
                 }
                 
+                # 처음 3번만 상세 로그
+                if self._real_data_count[stock_code] <= 3:
+                    log.info(
+                        f"   📊 가격: {price_data['current_price']:,}원 | "
+                        f"등락률: {price_data['change_rate']:+.2f}% | "
+                        f"거래량: {price_data['volume']:,}"
+                    )
+                
                 # 콜백 호출
                 if 'real_data' in self.callbacks:
                     self.callbacks['real_data'](stock_code, price_data)
+                else:
+                    if self._real_data_count[stock_code] == 1:
+                        log.warning(f"⚠️  실시간 데이터 콜백이 설정되지 않았습니다: {stock_code}")
+            
+            elif real_type == "주식호가잔량":
+                # 🆕 호가 데이터 수신 (선제적 매수 판단)
+                try:
+                    # 매도호가총잔량(121), 매수호가총잔량(125), 체결강도(228)
+                    ask_volume = self.ocx.dynamicCall(
+                        "GetCommRealData(QString, int)",
+                        stock_code, 121
+                    )
+                    bid_volume = self.ocx.dynamicCall(
+                        "GetCommRealData(QString, int)",
+                        stock_code, 125
+                    )
+                    execution_strength = self.ocx.dynamicCall(
+                        "GetCommRealData(QString, int)",
+                        stock_code, 228
+                    )
+                    
+                    order_book_data = {
+                        'bid_volume': abs(int(bid_volume)) if bid_volume else 0,
+                        'ask_volume': abs(int(ask_volume)) if ask_volume else 0,
+                        'execution_strength': abs(int(execution_strength)) if execution_strength else 0
+                    }
+                    
+                    # 호가 데이터 콜백 호출
+                    if 'order_book_data' in self.callbacks:
+                        self.callbacks['order_book_data'](stock_code, order_book_data)
+                    
+                except Exception as e:
+                    log.debug(f"호가 데이터 파싱 오류 ({stock_code}): {e}")
+            
+            else:
+                # 다른 유형의 실시간 데이터
+                if self._real_data_count[stock_code] <= 2:
+                    log.debug(f"   💡 지원하지 않는 실시간 데이터 유형: {real_type}")
                     
         except Exception as e:
             log.error(f"실시간 데이터 처리 중 오류: {e}")
+            import traceback
+            log.error(f"상세: {traceback.format_exc()}")
     
     def _on_receive_chejan_data(self, gubun, item_cnt, fid_list):
         """체결 데이터 수신 이벤트"""

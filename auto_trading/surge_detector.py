@@ -58,6 +58,12 @@ class SurgeCandidate:
         self.volume_history: List[int] = [volume]
         self.max_volume_history = 10
         
+        # 🆕 호가 데이터 (선제적 매수 판단)
+        self.bid_volume = 0  # 매수 총잔량
+        self.ask_volume = 0  # 매도 총잔량
+        self.execution_strength = 0  # 체결강도 (%)
+        self.bid_ask_ratio = 0  # 매수/매도 잔량 비율
+        
         # 감지 시간
         self.last_detected_time: Optional[datetime] = None
     
@@ -75,6 +81,66 @@ class SurgeCandidate:
         if len(self.volume_history) > self.max_volume_history:
             self.volume_history = self.volume_history[-self.max_volume_history:]
     
+    def update_order_book(self, bid_volume: int, ask_volume: int, execution_strength: int):
+        """
+        호가 데이터 업데이트 (선제적 매수 판단)
+        
+        Args:
+            bid_volume: 매수 총잔량
+            ask_volume: 매도 총잔량
+            execution_strength: 체결강도 (%)
+        """
+        self.bid_volume = bid_volume
+        self.ask_volume = ask_volume
+        self.execution_strength = execution_strength
+        
+        # 매수/매도 잔량 비율 계산
+        if ask_volume > 0:
+            self.bid_ask_ratio = bid_volume / ask_volume
+        else:
+            self.bid_ask_ratio = 0
+    
+    def get_buying_pressure(self) -> float:
+        """
+        매수 압력 점수 계산 (0~100)
+        
+        Returns:
+            높을수록 매수세 강함
+        """
+        score = 0
+        
+        # 1. 매수/매도 잔량 비율 (최대 40점)
+        if self.bid_ask_ratio > 2.0:
+            score += 40
+        elif self.bid_ask_ratio > 1.5:
+            score += 30
+        elif self.bid_ask_ratio > 1.0:
+            score += 20
+        elif self.bid_ask_ratio > 0.8:
+            score += 10
+        
+        # 2. 체결강도 (최대 40점)
+        if self.execution_strength > 200:
+            score += 40
+        elif self.execution_strength > 150:
+            score += 30
+        elif self.execution_strength > 120:
+            score += 20
+        elif self.execution_strength > 100:
+            score += 10
+        
+        # 3. 상승률 (최대 20점)
+        if self.current_change_rate > 7:
+            score += 20
+        elif self.current_change_rate > 5:
+            score += 15
+        elif self.current_change_rate > 3:
+            score += 10
+        elif self.current_change_rate > 1:
+            score += 5
+        
+        return min(score, 100)
+    
     def get_average_volume(self) -> float:
         """평균 거래량 계산"""
         if not self.volume_history:
@@ -91,26 +157,35 @@ class SurgeCandidate:
     def is_surge_detected(
         self,
         min_change_rate: float,
-        min_volume_ratio: float
+        min_volume_ratio: float,
+        min_buying_pressure: float = 60.0  # 최소 매수 압력 점수
     ) -> bool:
         """
-        급등 조건 확인
+        급등 조건 확인 (호가 분석 포함)
         
         Args:
             min_change_rate: 최소 상승률 (%)
             min_volume_ratio: 최소 거래량 비율
+            min_buying_pressure: 최소 매수 압력 점수 (0~100, 기본 60)
         
         Returns:
             급등 여부
         """
-        # 상승률 조건
+        # 1. 기본 조건: 상승률
         if self.current_change_rate < min_change_rate:
             return False
         
-        # 거래량 조건
+        # 2. 기본 조건: 거래량 비율
         volume_ratio = self.get_volume_ratio()
         if volume_ratio < min_volume_ratio:
             return False
+        
+        # 3. 🆕 고급 조건: 매수 압력 (선제적 감지)
+        # 호가 데이터가 있으면 매수세 강도를 확인
+        if self.bid_volume > 0 or self.ask_volume > 0:
+            buying_pressure = self.get_buying_pressure()
+            if buying_pressure < min_buying_pressure:
+                return False
         
         return True
     
@@ -189,17 +264,24 @@ class SurgeDetector:
             초기화 성공 여부
         """
         try:
-            log.info("급등주 후보군 로드 중...")
+            log.info("=" * 70)
+            log.info("🚀 급등주 감지기 초기화 시작")
+            log.info("=" * 70)
+            log.info(f"📊 설정: 후보 {self.candidate_count}개, 상승률 >={self.min_change_rate}%, 거래량 >={self.min_volume_ratio}배")
             
             # 거래대금 상위 종목 조회
+            log.info("1️⃣ 거래대금 상위 종목 조회 중...")
             top_stocks = self.kiwoom.get_top_traded_stocks(self.candidate_count)
             
             if not top_stocks:
-                log.error("거래대금 상위 종목 조회 실패")
+                log.error("❌ 거래대금 상위 종목 조회 실패 - 결과가 비어있습니다.")
                 return False
             
+            log.info(f"✅ 조회 성공: {len(top_stocks)}개 종목")
+            
             # 후보군 등록
-            for stock in top_stocks:
+            log.info("2️⃣ 급등주 후보군 등록 중...")
+            for i, stock in enumerate(top_stocks, 1):
                 candidate = SurgeCandidate(
                     code=stock['code'],
                     name=stock['name'],
@@ -209,18 +291,52 @@ class SurgeDetector:
                     trade_value=stock['trade_value']
                 )
                 self.candidates[stock['code']] = candidate
+                
+                # 처음 5개만 로그 출력
+                if i <= 5:
+                    log.info(
+                        f"   {i}. {stock['name']}({stock['code']}) "
+                        f"{stock['price']:,}원 ({stock['change_rate']:+.2f}%) "
+                        f"거래대금: {stock['trade_value']:,}원"
+                    )
             
-            log.success(f"급등주 후보군 로드 완료: {len(self.candidates)}개 종목")
+            if len(top_stocks) > 5:
+                log.info(f"   ... 외 {len(top_stocks) - 5}개")
+            
+            log.success(f"✅ 급등주 후보군 등록 완료: {len(self.candidates)}개 종목")
             
             # 실시간 시세 등록
+            log.info("3️⃣ 급등주 후보군 실시간 시세 등록 중...")
             candidate_codes = list(self.candidates.keys())
-            self.kiwoom.register_real_data(candidate_codes)
+            
+            # 배치로 나눠서 등록 (API 과부하 방지)
+            batch_size = 50
+            for i in range(0, len(candidate_codes), batch_size):
+                batch = candidate_codes[i:i+batch_size]
+                log.info(f"   📡 배치 {i//batch_size + 1}: {len(batch)}개 종목 등록 중...")
+                self.kiwoom.register_real_data(batch)
+                
+                # 배치 간 대기
+                if i + batch_size < len(candidate_codes):
+                    import time
+                    time.sleep(1)
+            
+            log.success(f"✅ 실시간 시세 등록 완료: {len(candidate_codes)}개 종목")
             
             self.is_initialized = True
+            log.info("=" * 70)
+            log.success("✅ 급등주 감지기 초기화 완료!")
+            log.info("=" * 70)
             return True
             
         except Exception as e:
-            log.error(f"급등주 감지기 초기화 중 오류: {e}")
+            log.error("=" * 70)
+            log.error(f"❌ 급등주 감지기 초기화 중 오류!")
+            log.error(f"   에러 타입: {type(e).__name__}")
+            log.error(f"   에러 메시지: {e}")
+            import traceback
+            log.error(f"   상세: {traceback.format_exc()}")
+            log.error("=" * 70)
             return False
     
     def start_monitoring(self):
@@ -282,6 +398,54 @@ class SurgeDetector:
         except Exception as e:
             log.error(f"가격 업데이트 처리 중 오류: {e}")
     
+    def on_order_book_update(self, stock_code: str, order_book_data: Dict):
+        """
+        🆕 실시간 호가 데이터 처리 (선제적 매수 판단)
+        
+        Args:
+            stock_code: 종목 코드
+            order_book_data: 호가 데이터 {
+                'bid_volume': 매수 총잔량,
+                'ask_volume': 매도 총잔량,
+                'execution_strength': 체결강도
+            }
+        """
+        if not self.is_monitoring:
+            return
+        
+        # 후보군에 없는 종목은 무시
+        if stock_code not in self.candidates:
+            return
+        
+        try:
+            candidate = self.candidates[stock_code]
+            
+            # 호가 데이터 업데이트
+            bid_volume = order_book_data.get('bid_volume', 0)
+            ask_volume = order_book_data.get('ask_volume', 0)
+            execution_strength = order_book_data.get('execution_strength', 0)
+            
+            candidate.update_order_book(bid_volume, ask_volume, execution_strength)
+            
+            # 호가 데이터 기록 (디버깅용, 처음 3번만)
+            if not hasattr(self, '_orderbook_log_count'):
+                self._orderbook_log_count = {}
+            if stock_code not in self._orderbook_log_count:
+                self._orderbook_log_count[stock_code] = 0
+            
+            self._orderbook_log_count[stock_code] += 1
+            if self._orderbook_log_count[stock_code] <= 3:
+                buying_pressure = candidate.get_buying_pressure()
+                log.debug(
+                    f"📊 호가: {candidate.name}({stock_code}) | "
+                    f"매수세: {buying_pressure:.0f}점 | "
+                    f"잔량비: {candidate.bid_ask_ratio:.2f} | "
+                    f"체결강도: {execution_strength}%"
+                )
+            
+        except Exception as e:
+            log.error(f"호가 데이터 처리 중 오류 ({stock_code}): {e}")
+    
     def _check_surge(self, candidate: SurgeCandidate):
         """
         급등 조건 확인 및 콜백 호출
@@ -307,12 +471,23 @@ class SurgeDetector:
             self.detection_count[candidate.code] += 1
             
             volume_ratio = candidate.get_volume_ratio()
+            buying_pressure = candidate.get_buying_pressure()
+            
+            # 🆕 호가 정보 포함
+            orderbook_info = ""
+            if candidate.bid_volume > 0 or candidate.ask_volume > 0:
+                orderbook_info = (
+                    f" | 매수세: {buying_pressure:.0f}점 "
+                    f"(잔량비 {candidate.bid_ask_ratio:.2f}, "
+                    f"체결강도 {candidate.execution_strength}%)"
+                )
             
             log.warning(
                 f"🚀 급등 감지! {candidate.name} ({candidate.code}) | "
                 f"상승률: {candidate.current_change_rate:+.2f}% | "
                 f"거래량: {volume_ratio:.2f}배 | "
                 f"현재가: {candidate.current_price:,}원"
+                f"{orderbook_info}"
             )
             
             # 콜백 호출

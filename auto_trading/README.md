@@ -18,6 +18,11 @@ cd .\auto_trading\
   - 거래대금 상위 100개 종목 실시간 모니터링
   - 상승률 + 거래량 급증 조건으로 급등주 감지
   - 수동 승인(안전) 또는 자동 승인(공격적) 선택 가능
+- **시계열 데이터베이스**: 🆕 **SQLite** 기반 데이터 저장 (32/64비트 모두 지원)
+  - 실시간 1분봉 OHLCV 데이터 자동 저장
+  - Python 기본 포함 (추가 설치 불필요)
+  - Excel, CSV 내보내기 지원
+  - 과거 데이터 기반 백테스팅 및 분석 지원
 - **자동 리스크 관리**: 손절매(-5%), 익절매(+10%), 포지션 사이징 자동화
 - **실시간 모니터링**: 실시간 시세 데이터 기반 즉각 반응
 - **모의투자 지원**: 안전한 테스트 환경에서 충분한 검증 가능
@@ -125,6 +130,61 @@ cd .\auto_trading\
     - Ctrl+C 종료 문제 해결
     - PyQt 시그널 핸들러 추가
     - 안전한 종료 및 리소스 정리
+
+17. **[VISUALIZATION_GUIDE.md](VISUALIZATION_GUIDE.md)** 🆕 **(2025-10-28 업데이트)** ⭐
+    - **데이터 시각화 및 분석 완전 가이드**
+    - Excel/CSV 내보내기
+    - Grafana, Power BI 연동 방법
+    - Python 백테스팅 및 통계 분석
+    - 자동 리포트 생성
+
+## 데이터베이스 및 분석
+
+### 🆕 시계열 데이터베이스 (2025-10-28)
+
+프로그램은 실시간으로 수신한 가격 데이터를 자동으로 데이터베이스에 저장합니다.
+
+**기술 스택:**
+- **SQLite**: Python 기본 포함 데이터베이스 (32/64비트 모두 지원)
+- **CSV**: 범용 파일 포맷 (Excel, Power BI 등 모든 도구 호환)
+- **1분봉 OHLCV**: 시가, 고가, 저가, 종가, 거래량
+
+**자동 저장:**
+```python
+# 데이터는 자동으로 저장됩니다 (설정 변경 불필요)
+# 저장 위치: data/stocks.db (SQLite 데이터베이스)
+# CSV: data/csv/YYYY-MM/종목코드_YYYY-MM-DD.csv
+```
+
+**데이터 활용:**
+
+1. **Excel/CSV 내보내기**
+```python
+from data_analyzer import DataAnalyzer
+from database import StockDatabase
+from datetime import datetime, timedelta
+
+db = StockDatabase()
+analyzer = DataAnalyzer(db)
+
+# 최근 7일 데이터를 Excel로
+start_date = datetime.now() - timedelta(days=7)
+analyzer.export_to_excel('005930', start_date, datetime.now(), 'samsung.xlsx')
+```
+
+2. **통계 분석**
+```python
+# 통계 출력
+analyzer.print_statistics('005930', start_date, datetime.now())
+```
+
+3. **자동 리포트**
+```python
+# HTML 리포트 생성
+analyzer.generate_report('005930', start_date, datetime.now(), 'report.html')
+```
+
+**상세 가이드**: [VISUALIZATION_GUIDE.md](VISUALIZATION_GUIDE.md)
 
 ## 빠른 시작 (요약)
 

@@ -41,8 +41,11 @@ class ChartWidget(QWidget):
     """
     실시간 차트 위젯
     """
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, database=None):
         super().__init__(parent)
+        
+        # 데이터베이스 참조 (히스토리 로드용)
+        self.database = database
         
         # 데이터 저장 (최대 1000개 포인트)
         self.max_points = 1000
@@ -61,6 +64,9 @@ class ChartWidget(QWidget):
         
         # 현재 선택된 종목
         self.current_stock = None
+        
+        # 히스토리 로드 캐시 (중복 로드 방지)
+        self.loaded_stocks = set()
         
         # UI 초기화
         self.init_ui()
@@ -187,7 +193,15 @@ class ChartWidget(QWidget):
         if stock_code == "전체 수익률":
             self.current_stock = None
         else:
-            self.current_stock = stock_code
+            # 종목 코드 추출 (괄호 안의 코드)
+            if '(' in stock_code and ')' in stock_code:
+                self.current_stock = stock_code.split('(')[-1].split(')')[0]
+            else:
+                self.current_stock = stock_code
+            
+            # 아직 로드하지 않은 종목이면 히스토리 로드
+            if self.current_stock not in self.loaded_stocks:
+                self.load_history(self.current_stock, days=7)
         
         self.refresh_charts()
     
@@ -207,6 +221,48 @@ class ChartWidget(QWidget):
                 return
         
         self.stock_combo.addItem(display_text)
+    
+    def load_history(self, stock_code: str, days: int = 7):
+        """
+        과거 차트 데이터를 데이터베이스에서 로드
+        
+        Args:
+            stock_code: 종목 코드
+            days: 로드할 기간 (일)
+        """
+        if not PYQTGRAPH_AVAILABLE or not self.database or not self.database.enabled:
+            return
+        
+        try:
+            from datetime import timedelta
+            
+            # 이미 로드했으면 스킵
+            if stock_code in self.loaded_stocks:
+                return
+            
+            # 기간 설정
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days)
+            
+            # DB에서 1분봉 데이터 조회
+            candles = self.database.get_candles(stock_code, start_date, end_date)
+            
+            if candles:
+                # 차트에 추가
+                for candle in candles:
+                    self.update_price_data(
+                        stock_code,
+                        candle['close'],
+                        candle['timestamp']
+                    )
+                
+                print(f"✅ {stock_code} 히스토리 로드: {len(candles)}개 1분봉 (최근 {days}일)")
+                self.loaded_stocks.add(stock_code)
+            else:
+                print(f"ℹ️  {stock_code} 히스토리 없음 (DB에 저장된 데이터가 없습니다)")
+                
+        except Exception as e:
+            print(f"❌ 히스토리 로드 오류 ({stock_code}): {e}")
     
     def update_price_data(self, stock_code: str, price: float, timestamp: Optional[datetime] = None):
         """

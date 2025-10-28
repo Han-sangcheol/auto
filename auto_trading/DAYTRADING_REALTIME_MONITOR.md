@@ -484,3 +484,4 @@ Get-Content auto_trading\logs\trading.log -Wait | Select-String "체결 완료"
 
 언제 매수하고 언제 매도하는지 명확하게 확인할 수 있습니다.
 
+
