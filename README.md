@@ -2,8 +2,8 @@
 
 **엔터프라이즈급 자동매매 플랫폼**
 
-[![Status](https://img.shields.io/badge/status-완료-success)](IMPLEMENTATION_STATUS.md)
-[![Phase](https://img.shields.io/badge/phase-완료-blue)](PROJECT_COMPLETE.md)
+[![Status](https://img.shields.io/badge/status-완료-success)](docs/implementation/IMPLEMENTATION_STATUS.md)
+[![Phase](https://img.shields.io/badge/phase-완료-blue)](docs/archive/PROJECT_COMPLETE.md)
 
 ---
 
@@ -88,11 +88,12 @@ Frontend (PySide6) ←→ Backend (FastAPI) ←→ Trading Engine (32-bit)
 
 | 문서 | 설명 |
 |------|------|
-| [빠른 시작](QUICKSTART_SIMPLE.md) | 3단계로 시작하기 |
-| [API 문서](docs/API.md) | REST API 참조 |
-| [사용자 매뉴얼](docs/USER_MANUAL.md) | 화면별 사용법 |
-| [개발자 가이드](docs/DEVELOPER_GUIDE.md) | 개발 가이드 |
-| [배포 가이드](docs/DEPLOYMENT.md) | 배포 방법 |
+| [빠른 시작](docs/user/QUICKSTART_SIMPLE.md) | 3단계로 시작하기 |
+| [API 문서](docs/developer/API.md) | REST API 참조 |
+| [사용자 매뉴얼](docs/user/USER_MANUAL.md) | 화면별 사용법 |
+| [개발자 가이드](docs/developer/DEVELOPER_GUIDE.md) | 개발 가이드 |
+| [배포 가이드](docs/developer/DEPLOYMENT.md) | 배포 방법 |
+| [전체 문서](docs/) | 모든 문서 보기 |
 
 ---
 
@@ -158,9 +159,10 @@ taskkill /PID <PID> /F
 
 ## 🔗 링크
 
-- 📊 [구현 진행 상황](IMPLEMENTATION_STATUS.md)
-- 🎉 [프로젝트 완료 보고](PROJECT_COMPLETE.md)
-- 🏗️ [아키텍처 설계](docs/ARCHITECTURE.md)
+- 📊 [구현 진행 상황](docs/implementation/IMPLEMENTATION_STATUS.md)
+- 🎉 [프로젝트 완료 보고](docs/archive/PROJECT_COMPLETE.md)
+- 🏗️ [아키텍처 설계](docs/architecture/ARCHITECTURE.md)
+- 📚 [전체 문서](docs/)
 
 ---
 
@@ -177,6 +179,18 @@ taskkill /PID <PID> /F
 - **문서**: [docs/](docs/)
 - **이슈**: GitHub Issues
 - **이메일**: support@cleonai.com
+
+---
+
+## 🔗 관련 프로젝트
+
+### auto_trading (독립 프로젝트)
+
+키움 API 기반 독립 실행형 자동매매 프로그램입니다.
+
+- **위치**: [auto_trading/](auto_trading/)
+- **README**: [auto_trading/README.md](auto_trading/README.md)
+- **문서**: [auto_trading/docs/](auto_trading/docs/)
 
 ---
 

@@ -243,3 +243,4 @@ SURGE_CANDIDATE_COUNT=30          # 더 줄이기
 **테스트 상태**: ⏳ 대기 중
 
 
+

@@ -238,3 +238,4 @@ Python 3.11.9 (32 bit)
 - Python 설치: https://www.python.org/downloads/
 
 
+

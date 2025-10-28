@@ -1,6 +1,3 @@
-cd .\auto_trading\
-.\.venv\Scripts\activate
-.\start.bat
 # CleonAI 자동매매 프로그램
 
 키움증권 Open API를 활용한 PC 기반 Python 자동매매 시스템
@@ -37,106 +34,34 @@ cd .\auto_trading\
 
 > **중요**: 키움 Open API는 32비트 Python만 지원합니다.  
 > 이미 64비트 Python을 사용 중이라면, 별도로 32비트를 설치하여 독립적으로 사용할 수 있습니다.  
-> 자세한 내용: [SETUP_ISOLATED_PYTHON.md](SETUP_ISOLATED_PYTHON.md)
+> 자세한 내용: [Python 32비트 설치](docs/installation/SETUP_ISOLATED_PYTHON.md)
 
-## 문서 가이드
+## 📚 문서 가이드
+
+**모든 문서는 [docs/](docs/) 폴더에 체계적으로 정리되어 있습니다.**
+
+### 빠른 링크
+
+| 카테고리 | 문서 |
+|---------|------|
+| 🚀 **설치** | [빠른 설치](docs/installation/QUICK_INSTALL.md) ⭐ 추천 |
+| 📖 **사용법** | [빠른 시작](docs/guides/QUICKSTART.md) |
+| 🔧 **문제 해결** | [FAQ](docs/troubleshooting/FAQ.md) / [트러블슈팅](docs/troubleshooting/TROUBLESHOOTING.md) |
+| 📊 **데이터 분석** | [데이터 시각화 가이드](docs/guides/VISUALIZATION_GUIDE.md) |
+| 📚 **전체 문서** | [docs/README.md](docs/README.md) |
 
 ### 처음 사용하는 경우
 
-1. **[GETTING_STARTED.md](GETTING_STARTED.md)** ⭐ **추천**
-   - 처음부터 끝까지 완전한 설치 가이드
-   - 환경 설정부터 첫 실행까지 모든 단계 포함
-   - 30-40분 소요 예상
+1. [빠른 설치](docs/installation/QUICK_INSTALL.md) ⭐ **가장 쉬움** (5분)
+2. 또는 [완전 설치 가이드](docs/installation/GETTING_STARTED.md) (30-40분)
+3. [빠른 시작](docs/guides/QUICKSTART.md) (5분)
+4. [매매 전략](docs/guides/STRATEGY_GUIDE.md)
 
-### 이미 설정을 완료한 경우
+### 문제가 발생한 경우
 
-2. **[QUICKSTART.md](QUICKSTART.md)**
-   - 빠른 시작 가이드 (5분)
-   - 기본 설정이 완료된 사용자용
-
-### 추가 문서
-
-3. **[KIWOOM_API_SETUP.md](KIWOOM_API_SETUP.md)**
-   - 키움증권 Open API+ 신청 및 설치 상세 가이드
-   - 모의투자 계좌 신청 방법
-   - 공동인증서 준비
-
-4. **[STRATEGY_GUIDE.md](STRATEGY_GUIDE.md)**
-   - 매매 전략 상세 설명
-   - 전략 파라미터 조정 방법
-   - 성과 평가 지표
-
-5. **[FAQ.md](FAQ.md)**
-   - 자주 묻는 질문과 답변
-   - 일반적인 문제 해결 방법
-
-6. **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**
-   - 문제 해결 가이드
-   - 에러 메시지별 대응 방법
-
-7. **[GUI_FREEZE_FIX.md](GUI_FREEZE_FIX.md)** 🆕 **(2025-10-26 업데이트)**
-   - GUI 응답없음 문제 해결
-   - QTimer 기반 논블로킹 방식으로 개선
-   - 장시간 안정적 실행 가능
-
-8. **[LOG_SYSTEM_UPDATE.md](LOG_SYSTEM_UPDATE.md)** 🆕 **(2025-10-26 업데이트)**
-   - 로그 파일 날짜별 자동 생성
-   - trading_YYYY-MM-DD.log 형식
-   - 로그 관리 및 분석 편리
-
-9. **[ENHANCED_LOGGING_2025-10-26.md](ENHANCED_LOGGING_2025-10-26.md)** 🆕 **(2025-10-26 업데이트)**
-   - 조회 결과 상세 표시 (잔액, 보유종목)
-   - 실시간 가격 업데이트 표시
-   - 급등주 모니터링 상태 명확화
-   - 5분마다 자동 상태 요약
-
-10. **[EXECUTION_STATUS_CHECK.md](EXECUTION_STATUS_CHECK.md)** 🆕 **(2025-10-27 업데이트)**
-    - 프로그램 정상 실행 상태 확인
-    - OpenAPI 로그인 상세 설명
-    - 하트비트 (1분마다 정상 실행 확인)
-    - 로그 파일 날짜별 자동 생성 확인
-
-11. **[START_BAT_GUIDE.md](START_BAT_GUIDE.md)** 🆕 **(2025-10-27 업데이트)**
-    - start.bat = python main.py (동일한 실행 결과)
-    - 급등주 자동 승인 설정 (SURGE_AUTO_APPROVE=True)
-    - GUI 환경에서 자동 승인 권장
-    - .env 파일 자동 생성
-
-12. **[AUTO_APPROVAL_UPDATE_2025-10-27.md](AUTO_APPROVAL_UPDATE_2025-10-27.md)** 🆕 **(2025-10-27 업데이트)**
-    - 급등주 자동 승인 기본값 변경 (False → True)
-    - yes/no 입력 불필요 (자체 판단)
-    - GUI 환경 완전 호환
-    - 리스크 관리 설정 가이드
-
-13. **[DAYTRADING_REALTIME_MONITOR.md](DAYTRADING_REALTIME_MONITOR.md)** 🆕 **(2025-10-27 업데이트)**
-    - 단타 매매 실시간 모니터링 가이드
-    - 매수/매도 시점 명확한 확인
-    - 10초 주기 신호 체크 (단타 최적화)
-    - 상세한 체결 로그 (시각, 금액, 손익률)
-
-14. **[DAYTRADING_UPDATE_2025-10-27.md](DAYTRADING_UPDATE_2025-10-27.md)** 🆕 **(2025-10-27 업데이트)**
-    - 단타 매매 실시간 모니터링 업데이트 전체 요약
-    - 신호 체크 주기 6배 단축 (60초 → 10초)
-    - 실시간 가격 표시 2배 증가
-    - 매수/매도/손절/익절 로그 상세화
-
-15. **[IMMEDIATE_BUY_FIX_2025-10-27.md](IMMEDIATE_BUY_FIX_2025-10-27.md)** 🆕 **(2025-10-27 업데이트)** ⭐
-    - **매수/매도 안 되는 문제 해결** (중요!)
-    - 급등주 감지 즉시 매수 (30개 데이터 대기 제거)
-    - 보유 종목 2배 빠른 체크 (10초 → 5초)
-    - 실시간 데이터 수신 확인 로그
-
-16. **[CTRL_C_FIX_2025-10-27.md](CTRL_C_FIX_2025-10-27.md)** 🆕 **(2025-10-27 업데이트)**
-    - Ctrl+C 종료 문제 해결
-    - PyQt 시그널 핸들러 추가
-    - 안전한 종료 및 리소스 정리
-
-17. **[VISUALIZATION_GUIDE.md](VISUALIZATION_GUIDE.md)** 🆕 **(2025-10-28 업데이트)** ⭐
-    - **데이터 시각화 및 분석 완전 가이드**
-    - Excel/CSV 내보내기
-    - Grafana, Power BI 연동 방법
-    - Python 백테스팅 및 통계 분석
-    - 자동 리포트 생성
+1. [FAQ](docs/troubleshooting/FAQ.md)
+2. [트러블슈팅](docs/troubleshooting/TROUBLESHOOTING.md)
+3. [실행 문제 해결](docs/troubleshooting/START_TROUBLESHOOTING.md)
 
 ## 데이터베이스 및 분석
 
@@ -184,7 +109,7 @@ analyzer.print_statistics('005930', start_date, datetime.now())
 analyzer.generate_report('005930', start_date, datetime.now(), 'report.html')
 ```
 
-**상세 가이드**: [VISUALIZATION_GUIDE.md](VISUALIZATION_GUIDE.md)
+**상세 가이드**: [데이터 시각화 가이드](docs/guides/VISUALIZATION_GUIDE.md)
 
 ## 빠른 시작 (요약)
 
@@ -196,7 +121,7 @@ PowerShell 관리자 권한으로:
 ```
 → Python 32비트 다운로드 + 설치 + 환경 구성 모두 자동!
 
-자세한 내용: **[QUICK_INSTALL.md](QUICK_INSTALL.md)**
+자세한 내용: **[빠른 설치 가이드](docs/installation/QUICK_INSTALL.md)**
 
 ### 📝 단계별 설치
 
@@ -225,33 +150,30 @@ start.bat       # CMD
 ```
 auto_trading/
 ├── README.md                    # 이 문서
-├── QUICK_INSTALL.md             # 빠른 설치 가이드 ⭐ NEW
-├── GETTING_STARTED.md           # 완전 설치 가이드
-├── QUICKSTART.md                # 빠른 시작
-├── KIWOOM_API_SETUP.md          # 키움 API 가이드
-├── SETUP_ISOLATED_PYTHON.md     # Python 32비트 독립 설치 가이드 ⭐ NEW
-├── STRATEGY_GUIDE.md            # 전략 설명
-├── FAQ.md                       # 자주 묻는 질문
-├── TROUBLESHOOTING.md           # 문제 해결
-├── .env.example                 # 설정 템플릿
-├── auto_setup_complete.ps1      # 완전 자동 설치 스크립트 ⭐ NEW
-├── install_python32.ps1         # Python 32비트 자동 설치 ⭐ NEW
-├── setup_python32.ps1           # Python 32비트 환경 구성 ⭐ NEW
-├── setup.ps1                    # 설치 스크립트 (PowerShell)
-├── setup.bat                    # 설치 스크립트 (CMD)
-├── start.ps1                    # 실행 스크립트 (PowerShell)
-├── start.bat                    # 실행 스크립트 (CMD)
-├── requirements.txt             # 패키지 목록
-├── main.py                      # 프로그램 진입점
-├── config.py                    # 설정 관리
-├── kiwoom_api.py                # 키움 API 래퍼
-├── surge_detector.py            # 급등주 감지 ⭐ NEW
-├── indicators.py                # 기술적 지표
-├── strategies.py                # 매매 전략
-├── risk_manager.py              # 리스크 관리
-├── trading_engine.py            # 자동매매 엔진
-├── logger.py                    # 로깅 시스템
-└── logs/                        # 로그 파일
+├── docs/                        # 📚 모든 문서 (체계적 정리)
+│   ├── README.md               # 문서 인덱스
+│   ├── installation/           # 설치 가이드
+│   ├── guides/                 # 사용 가이드
+│   ├── troubleshooting/        # 문제 해결
+│   ├── implementation/         # 구현 진행
+│   └── archive/                # 변경 로그 (날짜별)
+├── auto_setup_complete.ps1     # 완전 자동 설치 스크립트
+├── install_python32.ps1        # Python 32비트 자동 설치
+├── setup_python32.ps1          # Python 32비트 환경 구성
+├── setup.ps1 / setup.bat       # 설치 스크립트
+├── start.ps1 / start.bat       # 실행 스크립트
+├── requirements.txt            # 패키지 목록
+├── main.py                     # 프로그램 진입점
+├── config.py                   # 설정 관리
+├── kiwoom_api.py               # 키움 API 래퍼
+├── surge_detector.py           # 급등주 감지
+├── indicators.py               # 기술적 지표
+├── strategies.py               # 매매 전략
+├── risk_manager.py             # 리스크 관리
+├── trading_engine.py           # 자동매매 엔진
+├── logger.py                   # 로깅 시스템
+├── data/                       # 데이터베이스
+└── logs/                       # 로그 파일
 ```
 
 ## 주의사항
@@ -282,9 +204,10 @@ auto_trading/
 
 문제가 발생하거나 질문이 있으시면:
 
-1. [FAQ.md](FAQ.md) 확인
-2. [TROUBLESHOOTING.md](TROUBLESHOOTING.md) 확인
-3. 로그 파일 확인 (`logs/trading.log`, `logs/error.log`)
+1. [FAQ](docs/troubleshooting/FAQ.md) 확인
+2. [트러블슈팅](docs/troubleshooting/TROUBLESHOOTING.md) 확인
+3. [전체 문서](docs/README.md) 확인
+4. 로그 파일 확인 (`logs/trading.log`, `logs/error.log`)
 
 ## 라이선스
 
