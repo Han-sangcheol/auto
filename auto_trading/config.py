@@ -99,6 +99,21 @@ class Config:
     # 스케줄러 설정
     ENABLE_AUTO_SHUTDOWN = os.getenv('ENABLE_AUTO_SHUTDOWN', 'False').lower() == 'true'
     
+    # 시장 운영 시간 설정
+    MARKET_PRE_OPEN_TIME = os.getenv('MARKET_PRE_OPEN_TIME', '08:30')  # 장 시작 전 (동시호가)
+    MARKET_OPEN_TIME = os.getenv('MARKET_OPEN_TIME', '09:00')  # 정규장 시작
+    MARKET_CLOSE_TIME = os.getenv('MARKET_CLOSE_TIME', '15:30')  # 정규장 마감
+    MARKET_AFTER_HOURS_START = os.getenv('MARKET_AFTER_HOURS_START', '15:40')  # 시간외 시작
+    MARKET_AFTER_HOURS_END = os.getenv('MARKET_AFTER_HOURS_END', '16:00')  # 시간외 종료
+    
+    # 자동 시작/종료 설정
+    AUTO_START_ENABLED = os.getenv('AUTO_START_ENABLED', 'False').lower() == 'true'  # 장 시작 시 자동 시작
+    AUTO_START_TIME = os.getenv('AUTO_START_TIME', '08:50')  # 자동 시작 시간 (장 시작 10분 전)
+    AUTO_STOP_TIME = os.getenv('AUTO_STOP_TIME', '15:35')  # 자동 종료 시간 (장 마감 후)
+    
+    # 시간외 매매 설정
+    ENABLE_AFTER_HOURS_TRADING = os.getenv('ENABLE_AFTER_HOURS_TRADING', 'False').lower() == 'true'
+    
     # 로깅 설정
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
     LOG_FILE_PATH = os.getenv('LOG_FILE_PATH', 'logs/trading.log')
@@ -150,7 +165,7 @@ class Config:
         print("=" * 60)
         print("현재 설정값")
         print("=" * 60)
-        print(f"계좌번호: {cls.KIWOOM_ACCOUNT_NUMBER[:4]}****{cls.KIWOOM_ACCOUNT_NUMBER[-2:]}")
+        print(f"계좌번호: {cls.KIWOOM_ACCOUNT_NUMBER}")
         print(f"모의투자 사용: {cls.USE_SIMULATION}")
         print(f"최대 보유 종목 수: {cls.MAX_STOCKS}")
         print(f"종목당 투자 비율: {cls.POSITION_SIZE_PERCENT}%")
@@ -189,6 +204,14 @@ class Config:
         
         print("\n📅 스케줄러 설정:")
         print(f"  자동 종료: {'활성화 (16:00)' if cls.ENABLE_AUTO_SHUTDOWN else '비활성화'}")
+        
+        print("\n🕐 시장 운영 시간:")
+        print(f"  장 시작 전: {cls.MARKET_PRE_OPEN_TIME}")
+        print(f"  정규장: {cls.MARKET_OPEN_TIME} ~ {cls.MARKET_CLOSE_TIME}")
+        print(f"  시간외: {cls.MARKET_AFTER_HOURS_START} ~ {cls.MARKET_AFTER_HOURS_END}")
+        print(f"  자동 시작: {'활성화' if cls.AUTO_START_ENABLED else '비활성화'} ({cls.AUTO_START_TIME})")
+        print(f"  자동 종료: {cls.AUTO_STOP_TIME}")
+        print(f"  시간외 매매: {'활성화' if cls.ENABLE_AFTER_HOURS_TRADING else '비활성화'}")
         
         print("\n💾 데이터베이스 (SQLite):")
         print(f"  DB 저장: {'활성화' if cls.DB_ENABLED else '비활성화'}")

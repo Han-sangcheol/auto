@@ -37,6 +37,27 @@ from config import Config
 class KiwoomAPI:
     """키움 Open API 래퍼 클래스"""
     
+    # SendOrder 에러 코드
+    ERROR_CODES = {
+        0: "정상처리",
+        -10: "실패",
+        -100: "사용자정보교환 실패",
+        -101: "서버 접속 실패",
+        -102: "버전처리 실패",
+        -200: "시세조회 과부하",
+        -201: "REQUEST_INPUT_st 에러",
+        -202: "시세조회 제한",
+        -300: "주문 입력값 오류",
+        -301: "계좌비밀번호 없음",
+        -302: "타인계좌 사용 오류",
+        -303: "주문가격이 주문착오 금액기준 초과",
+        -304: "주문수량이 총발행주수의 1% 초과",
+        -305: "주문수량은 총발행주수의 3% 초과",
+        -306: "주문가격이 가격제한폭을 초과",
+        -307: "주문가능수량을 초과",
+        -308: "주문가능금액을 초과",
+    }
+    
     def __init__(self):
         """초기화"""
         from config import Config
@@ -44,7 +65,19 @@ class KiwoomAPI:
         self.ocx = QAxWidget("KHOPENAPI.KHOpenAPICtrl.1")
         self.is_connected = False
         self.account_number = None
-        self.account_password = Config.KIWOOM_ACCOUNT_PASSWORD  # 계좌 비밀번호
+        
+        # 계좌 비밀번호 설정
+        # .env 파일에서 비밀번호를 읽어옴
+        self.account_password = Config.KIWOOM_ACCOUNT_PASSWORD or ""
+        
+        # 모의투자 기본 비밀번호 처리
+        if Config.USE_SIMULATION and not self.account_password:
+            self.account_password = "0000"
+            log.info("모의투자: 기본 비밀번호 '0000' 사용")
+        
+        # 비밀번호 검증
+        self._validate_password()
+        
         self.callbacks = {}
         
         # 이벤트 루프
@@ -72,6 +105,30 @@ class KiwoomAPI:
         self._connect_signals()
         
         log.info("키움 API 초기화 완료")
+    
+    def _validate_password(self) -> bool:
+        """
+        비밀번호 유효성 검증
+        
+        Returns:
+            검증 성공 여부
+        """
+        if self.account_password:
+            # 길이 체크
+            if len(self.account_password) != 4:
+                log.warning(f"⚠️ 계좌 비밀번호는 4자리여야 합니다: {len(self.account_password)}자리")
+                return False
+            
+            # 숫자 체크
+            if not self.account_password.isdigit():
+                log.warning("⚠️ 계좌 비밀번호는 숫자만 가능합니다")
+                return False
+            
+            log.info(f"✅ 계좌 비밀번호 검증 완료: {self.account_password}")
+            return True
+        else:
+            log.warning("⚠️ 계좌 비밀번호 미설정 - API 저장 비밀번호 사용")
+            return True
     
     def _connect_signals(self):
         """이벤트 시그널 연결"""
@@ -137,6 +194,22 @@ class KiwoomAPI:
                 log.info(f"   👤 사용자: {user_name}")
                 log.info(f"   🖥️  서버: {'모의투자 서버' if server_type == '1' else '실서버'}")
                 log.info(f"   🔗 연결 상태: 정상")
+                
+                # 계좌 비밀번호 등록창 자동 표시
+                log.info("")
+                log.info("=" * 80)
+                log.info("📌 계좌 비밀번호 등록")
+                log.info("=" * 80)
+                log.info("계좌 비밀번호 등록창이 표시됩니다.")
+                log.info("계좌를 선택하고 비밀번호(4자리)를 입력한 후 '확인'을 클릭하세요.")
+                log.info(f"💡 모의투자 계좌 비밀번호: 0000 (또는 원하는 4자리 숫자)")
+                log.info("💡 등록 후 'AUTO' 체크박스를 선택하면 다음부터 자동 로그인됩니다.")
+                log.info("=" * 80)
+                log.info("")
+                
+                # ShowAccountWindow 호출하여 계좌 비밀번호 등록창 표시
+                result = self.ocx.dynamicCall("KOA_Functions(QString, QString)", "ShowAccountWindow", "")
+                log.info(f"계좌 비밀번호 등록창 호출 결과: {result}")
                 
                 return True
             else:
@@ -658,9 +731,13 @@ class KiwoomAPI:
                 if price == 0:
                     order_type = "03"  # 시장가
                 
+                # SendOrder 파라미터: 계좌번호는 10자리만 전달 (비밀번호는 로그인 시 계좌비밀번호 등록에서 처리)
+                # 마지막 파라미터는 "원주문번호"로 신규주문은 빈 문자열
+                log.debug(f"SendOrder 호출: 계좌번호={self.account_number}, 종목={stock_code}, 수량={quantity}, 가격={price}")
+                
                 ret = self.ocx.dynamicCall(
                     "SendOrder(QString, QString, QString, int, QString, int, int, QString, QString)",
-                    ["매수", "0101", self.account_number, 1, stock_code, quantity, price, order_type, self.account_password]
+                    ["매수", "0101", self.account_number, 1, stock_code, quantity, price, order_type, ""]
                 )
                 
                 if ret == 0:
@@ -670,7 +747,8 @@ class KiwoomAPI:
                     )
                     return "주문전송완료"
                 else:
-                    log.error(f"❌ 매수 주문 실패 (코드: {ret}): {stock_code}")
+                    error_msg = self.ERROR_CODES.get(ret, f"알 수 없는 오류 ({ret})")
+                    log.error(f"❌ 매수 주문 실패: {error_msg} - {stock_code}")
                     
                     # 재시도 가능한 오류인지 확인
                     if ret in [-308, -307]:  # 주문 가능 수량 초과 등
@@ -729,9 +807,13 @@ class KiwoomAPI:
                 if price == 0:
                     order_type = "03"  # 시장가
                 
+                # SendOrder 파라미터: 계좌번호는 10자리만 전달 (비밀번호는 로그인 시 계좌비밀번호 등록에서 처리)
+                # 마지막 파라미터는 "원주문번호"로 신규주문은 빈 문자열
+                log.debug(f"SendOrder 호출: 계좌번호={self.account_number}, 종목={stock_code}, 수량={quantity}, 가격={price}")
+                
                 ret = self.ocx.dynamicCall(
                     "SendOrder(QString, QString, QString, int, QString, int, int, QString, QString)",
-                    ["매도", "0101", self.account_number, 2, stock_code, quantity, price, order_type, self.account_password]
+                    ["매도", "0101", self.account_number, 2, stock_code, quantity, price, order_type, ""]
                 )
                 
                 if ret == 0:
@@ -741,7 +823,8 @@ class KiwoomAPI:
                     )
                     return "주문전송완료"
                 else:
-                    log.error(f"❌ 매도 주문 실패 (코드: {ret}): {stock_code}")
+                    error_msg = self.ERROR_CODES.get(ret, f"알 수 없는 오류 ({ret})")
+                    log.error(f"❌ 매도 주문 실패: {error_msg} - {stock_code}")
                     
                     # 재시도 불가능한 오류 체크
                     if ret in [-308, -307]:  # 잔고 부족 등

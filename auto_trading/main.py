@@ -26,6 +26,7 @@ from PyQt5.QtCore import QTimer
 from kiwoom_api import KiwoomAPI
 from trading_engine import TradingEngine
 from monitor_gui import MonitorWindow
+from market_scheduler import MarketScheduler, MarketState
 from logger import log
 from config import Config
 
@@ -195,9 +196,14 @@ def main():
         log.info("=" * 80)
         log.info("🔐 키움증권 Open API 로그인")
         log.info("=" * 80)
-        log.info("📌 공동인증서 창이 자동으로 표시됩니다")
-        log.info("📌 인증서를 선택하고 비밀번호를 입력하세요")
-        log.info("📌 별도의 계좌 비밀번호 입력은 필요하지 않습니다")
+        log.info("📌 [1단계] 공동인증서 창이 자동으로 표시됩니다")
+        log.info("   → 인증서를 선택하고 비밀번호를 입력하세요")
+        log.info("")
+        log.info("📌 [2단계] 로그인 성공 후 계좌 비밀번호 등록창이 표시됩니다")
+        log.info("   → 계좌를 선택하고 비밀번호(4자리)를 입력하세요")
+        log.info("   → 모의투자 계좌 비밀번호: 0000 권장")
+        log.info("   → 등록 후 'AUTO' 체크박스를 선택하면 다음부터 자동 로그인됩니다")
+        log.info("=" * 80)
         log.info("")
         
         if not kiwoom.login():
@@ -219,6 +225,46 @@ def main():
             return 1
         
         log.success("✅ 엔진 초기화 완료!")
+        
+        # 시장 상태 확인 및 안내
+        market_scheduler = MarketScheduler()
+        market_state = market_scheduler.get_current_market_state()
+        
+        log.info("=" * 80)
+        log.info("📊 시장 상태 확인")
+        log.info("=" * 80)
+        log.info(f"현재 상태: {market_state.value}")
+        
+        if market_state == MarketState.OPEN:
+            log.success("✅ 정규 거래 시간입니다. 자동매매를 시작할 수 있습니다.")
+            minutes_until_close = market_scheduler.get_time_until_market_close()
+            hours = minutes_until_close // 60
+            mins = minutes_until_close % 60
+            log.info(f"장 마감까지: {hours}시간 {mins}분")
+        elif market_state == MarketState.PRE_OPEN:
+            minutes_until_open = market_scheduler.get_time_until_market_open()
+            log.info(f"⏰ 장 시작 전입니다. {minutes_until_open}분 후 개장")
+            log.info("실시간 데이터 수신은 시작하지만, 매매는 개장 후 실행됩니다.")
+        elif market_state == MarketState.AFTER_HOURS:
+            log.info("⚡ 시간외 매매 시간입니다.")
+            if Config.ENABLE_AFTER_HOURS_TRADING:
+                log.info("시간외 매매가 활성화되어 있습니다.")
+            else:
+                log.warning("시간외 매매가 비활성화되어 있습니다.")
+        elif market_state in [MarketState.WEEKEND, MarketState.HOLIDAY, MarketState.CLOSED]:
+            minutes_until_open = market_scheduler.get_time_until_market_open()
+            hours = minutes_until_open // 60
+            mins = minutes_until_open % 60
+            log.warning(f"⚠️  현재 장외 시간입니다 ({market_state.value})")
+            log.warning(f"장 시작까지: {hours}시간 {mins}분")
+            
+            if Config.AUTO_START_ENABLED:
+                log.info("✅ 자동 시작이 활성화되어 있습니다.")
+                log.info("'자동매매 시작' 버튼을 누르면 장 시작 시 자동으로 시작됩니다.")
+            else:
+                log.info("장 시작 후 '자동매매 시작' 버튼을 눌러주세요.")
+        
+        log.info("=" * 80)
         
         # 급등주 승인 콜백 설정
         if Config.ENABLE_SURGE_DETECTION and engine.surge_detector:
@@ -277,9 +323,13 @@ def main():
         signal.signal(signal.SIGINT, signal_handler)
         
         # Python의 시그널 처리를 허용하기 위한 타이머 (500ms마다 Python 코드 실행)
+        def keep_alive():
+            """PyQt 이벤트 루프에서 Python 시그널 처리를 위한 빈 함수"""
+            pass  # 명시적으로 None 반환 방지
+        
         timer = QTimer()
         timer.start(500)
-        timer.timeout.connect(lambda: None)  # 빈 함수 실행으로 Python 시그널 체크
+        timer.timeout.connect(keep_alive)  # 안전한 빈 함수 연결
         
         # 이벤트 루프 실행
         exit_code = app.exec_()

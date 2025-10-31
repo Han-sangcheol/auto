@@ -10,6 +10,7 @@
 |------|------|----------|
 | [빠른 설치](installation/QUICK_INSTALL.md) | 원클릭 자동 설치 | 5분 |
 | [완전 설치 가이드](installation/GETTING_STARTED.md) | 처음부터 끝까지 완전한 설치 | 30-40분 |
+| [.env 파일 설정](installation/ENV_TEMPLATE.md) | 🆕 환경 변수 템플릿 및 가이드 | 3분 |
 | [Python 32비트 설치](installation/SETUP_ISOLATED_PYTHON.md) | 키움 API를 위한 Python 설정 | 10분 |
 | [키움 API 설정](installation/KIWOOM_API_SETUP.md) | Open API+ 신청 및 모의투자 계좌 | 20분 |
 
@@ -31,6 +32,7 @@
 |------|------|
 | [FAQ](troubleshooting/FAQ.md) | 자주 묻는 질문 |
 | [트러블슈팅](troubleshooting/TROUBLESHOOTING.md) | 일반적인 문제 해결 |
+| [계좌 비밀번호 문제](troubleshooting/PASSWORD_ISSUE.md) | 🆕 -301 에러 해결 |
 | [실행 문제 해결](troubleshooting/START_TROUBLESHOOTING.md) | 실행 관련 문제 |
 | [프로세스 종료](troubleshooting/KILL_FROZEN_PROCESS.md) | 응답없음 해결 |
 | [GUI 프리즈 수정](troubleshooting/GUI_FREEZE_FIX.md) | GUI 응답없음 문제 |

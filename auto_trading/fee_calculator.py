@@ -31,9 +31,10 @@ class FeeCalculator:
     """거래 수수료 계산기"""
     
     # 키움증권 수수료율 (%)
-    BUY_COMMISSION_RATE = 0.015  # 매수 수수료
-    SELL_COMMISSION_RATE = 0.015  # 매도 수수료
-    TRANSACTION_TAX_RATE = 0.23  # 증권거래세 (매도 시)
+    BUY_COMMISSION_RATE = 0.015  # 실계좌 매수 수수료
+    SELL_COMMISSION_RATE = 0.015  # 실계좌 매도 수수료
+    SIMULATION_COMMISSION_RATE = 0.35  # 모의투자 수수료 (매수/매도 동일)
+    TRANSACTION_TAX_RATE = 0.23  # 증권거래세 (매도 시, 실계좌만)
     RURAL_TAX_RATE = 0.15  # 농어촌특별세 (거래세의 %)
     
     def __init__(self, use_simulation: bool = True):
@@ -46,7 +47,8 @@ class FeeCalculator:
         self.use_simulation = use_simulation
         
         if use_simulation:
-            log.info("📝 수수료 계산기 초기화 (모의투자 모드 - 수수료 없음)")
+            log.info("📝 수수료 계산기 초기화 (모의투자 모드)")
+            log.info(f"   매수/매도 수수료: {self.SIMULATION_COMMISSION_RATE}%")
         else:
             log.info("📝 수수료 계산기 초기화 (실계좌 모드 - 실제 수수료 적용)")
             log.info(f"   매수 수수료: {self.BUY_COMMISSION_RATE}%")
@@ -64,9 +66,11 @@ class FeeCalculator:
             수수료 금액 (원 단위, 소수점 반올림)
         """
         if self.use_simulation:
-            return 0
+            # 모의투자: 0.35% 수수료 적용
+            fee = round(amount * self.SIMULATION_COMMISSION_RATE / 100)
+            return fee
         
-        # 매수 수수료 = 거래금액 * 수수료율
+        # 실계좌: 0.015% 수수료
         fee = round(amount * self.BUY_COMMISSION_RATE / 100)
         
         return fee
@@ -82,8 +86,11 @@ class FeeCalculator:
             총 비용 (수수료 + 세금, 원 단위)
         """
         if self.use_simulation:
-            return 0
+            # 모의투자: 0.35% 수수료만 (거래세 없음)
+            fee = round(amount * self.SIMULATION_COMMISSION_RATE / 100)
+            return fee
         
+        # 실계좌: 수수료 + 거래세 + 농특세
         # 1. 매도 수수료
         commission = round(amount * self.SELL_COMMISSION_RATE / 100)
         
@@ -145,7 +152,10 @@ class FeeCalculator:
             손익분기점 가격
         """
         if self.use_simulation:
-            return buy_price
+            # 모의투자: 매수 0.35% + 매도 0.35% = 0.70%
+            total_fee_rate = (self.SIMULATION_COMMISSION_RATE * 2) / 100
+            break_even = round(buy_price * (1 + total_fee_rate))
+            return break_even
         
         # 매수 시 수수료율
         buy_fee_rate = self.BUY_COMMISSION_RATE / 100
@@ -195,10 +205,19 @@ class FeeCalculator:
     def print_fee_summary(self, buy_price: int, quantity: int):
         """수수료 정보 출력"""
         if self.use_simulation:
+            info = self.get_fee_info(buy_price, quantity)
+            
             print("\n" + "=" * 60)
             print("💰 수수료 정보 (모의투자)")
             print("=" * 60)
-            print("모의투자 계좌는 수수료가 부과되지 않습니다.")
+            print(f"매수가:           {info['buy_price']:>15,}원")
+            print(f"수량:             {info['quantity']:>15}주")
+            print(f"매수 금액:        {info['buy_amount']:>15,}원")
+            print(f"\n매수 수수료:      {info['buy_fee']:>15,}원 (0.35%)")
+            print(f"예상 매도 비용:   {info['expected_sell_fee']:>15,}원 (0.35%)")
+            print(f"총 예상 수수료:   {info['total_expected_fee']:>15,}원")
+            print(f"\n손익분기점:       {info['break_even_price']:>15,}원 "
+                  f"({info['break_even_rate']:+.2f}%)")
             print("=" * 60 + "\n")
             return
         

@@ -26,6 +26,7 @@ from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QFont, QColor
 from datetime import datetime
 from typing import Optional
+from market_scheduler import MarketScheduler, MarketState
 
 # 차트 위젯 (선택적 로드)
 try:
@@ -59,6 +60,7 @@ class MonitorWindow(QMainWindow):
         super().__init__(parent)
         self.trading_engine = trading_engine
         self.chart_widget = None  # 차트 위젯 참조
+        self.market_scheduler = MarketScheduler()  # 시장 스케줄러
         self.init_ui()
         self.setup_timer()
         
@@ -223,6 +225,13 @@ class MonitorWindow(QMainWindow):
         """계좌 정보 그룹 생성"""
         group = QGroupBox("💰 계좌 정보")
         layout = QHBoxLayout()
+        
+        # 시장 상태
+        self.market_state_label = QLabel("시장 상태: 확인중...")
+        self.market_state_label.setFont(QFont("맑은 고딕", 12, QFont.Bold))
+        layout.addWidget(self.market_state_label)
+        
+        layout.addStretch()
         
         # 잔고
         self.balance_label = QLabel("잔고: 조회중...")
@@ -399,6 +408,9 @@ class MonitorWindow(QMainWindow):
     def update_display(self):
         """화면 업데이트"""
         try:
+            # 시장 상태 업데이트
+            self.update_market_state()
+            
             # 계좌 정보 업데이트
             self.update_account_info()
             
@@ -410,6 +422,44 @@ class MonitorWindow(QMainWindow):
             
         except Exception as e:
             self.add_log(f"❌ 화면 업데이트 오류: {e}", "red")
+    
+    def update_market_state(self):
+        """시장 상태 업데이트"""
+        try:
+            market_state = self.market_scheduler.get_current_market_state()
+            
+            # 상태별 색상 및 텍스트
+            state_colors = {
+                MarketState.OPEN: ("🟢 정규장", "green"),
+                MarketState.PRE_OPEN: ("🟡 장시작전", "orange"),
+                MarketState.AFTER_HOURS: ("🟠 시간외", "orange"),
+                MarketState.CLOSED: ("🔴 장마감", "red"),
+                MarketState.WEEKEND: ("🔵 주말", "blue"),
+                MarketState.HOLIDAY: ("🟣 공휴일", "purple"),
+            }
+            
+            state_text, color = state_colors.get(market_state, (market_state.value, "gray"))
+            
+            # 시간 정보 추가
+            if market_state in [MarketState.CLOSED, MarketState.WEEKEND, MarketState.HOLIDAY]:
+                minutes_until_open = self.market_scheduler.get_time_until_market_open()
+                hours = minutes_until_open // 60
+                mins = minutes_until_open % 60
+                state_text += f" ({hours}시간 {mins}분 후 개장)"
+            elif market_state == MarketState.OPEN:
+                minutes_until_close = self.market_scheduler.get_time_until_market_close()
+                hours = minutes_until_close // 60
+                mins = minutes_until_close % 60
+                state_text += f" ({hours}시간 {mins}분 후 마감)"
+            elif market_state == MarketState.PRE_OPEN:
+                minutes_until_open = self.market_scheduler.get_time_until_market_open()
+                state_text += f" ({minutes_until_open}분 후 개장)"
+            
+            self.market_state_label.setText(f"시장: {state_text}")
+            self.market_state_label.setStyleSheet(f"color: {color}; font-weight: bold;")
+            
+        except Exception as e:
+            self.market_state_label.setText("시장 상태: 오류")
     
     def update_account_info(self):
         """계좌 정보 업데이트"""

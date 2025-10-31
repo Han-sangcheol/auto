@@ -137,8 +137,14 @@ SETUP_ISOLATED_PYTHON.md 참고   # 수동 설치 가이드
 .\setup.ps1     # PowerShell (권장)
 setup.bat       # CMD
 
-# 2. .env 파일 설정
-# 계좌번호, 비밀번호, 관심 종목 입력
+# 2. .env 파일 설정 (중요!)
+# 파일 탐색기에서 .env 파일 생성 후 메모장으로 열기
+# 필수 항목:
+#   KIWOOM_ACCOUNT_NUMBER=계좌번호     # 모의투자는 8로 시작
+#   KIWOOM_ACCOUNT_PASSWORD=0000       # HTS에서 설정한 4자리 비밀번호
+#   WATCH_LIST=005930,000660,035720    # 관심 종목
+#
+# 계좌 비밀번호 설정 방법: docs/troubleshooting/PASSWORD_ISSUE.md 참고
 
 # 3. 프로그램 실행
 .\start.ps1     # PowerShell (권장)

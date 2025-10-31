@@ -56,6 +56,7 @@ from strategies import MultiStrategy, SignalType, create_default_strategies
 from risk_manager import RiskManager
 from indicators import calculate_all_indicators
 from surge_detector import SurgeDetector
+from market_scheduler import MarketScheduler, MarketState
 from logger import log
 from config import Config
 
@@ -158,6 +159,9 @@ class TradingEngine:
         
         # 스케줄러 (선택적)
         self.scheduler = None
+        
+        # 시장 스케줄러 (필수)
+        self.market_scheduler = MarketScheduler()
         
         # GUI 모니터 창 (선택적)
         self.monitor_window = None
@@ -368,8 +372,49 @@ class TradingEngine:
             log.warning("이미 실행 중입니다.")
             return
         
+        # 시장 상태 확인
+        market_state = self.market_scheduler.get_current_market_state()
+        
+        # 장외 시간이면 자동 시작 예약 또는 경고
+        if market_state in [MarketState.WEEKEND, MarketState.HOLIDAY, MarketState.CLOSED]:
+            minutes_until_open = self.market_scheduler.get_time_until_market_open()
+            hours = minutes_until_open // 60
+            mins = minutes_until_open % 60
+            
+            log.warning("=" * 70)
+            log.warning(f"⚠️  현재 장외 시간입니다 ({market_state.value})")
+            log.warning(f"장 시작까지: {hours}시간 {mins}분")
+            log.warning("=" * 70)
+            
+            if Config.AUTO_START_ENABLED:
+                log.info("자동 시작이 활성화되어 있습니다. 장 시작 시 자동으로 시작합니다.")
+                self.market_scheduler.schedule_auto_start(self._auto_start_callback)
+                
+                # GUI 로그 추가
+                self._add_gui_log(
+                    f"⏰ 자동 시작 예약: 장 시작 시 ({hours}시간 {mins}분 후)",
+                    "orange"
+                )
+                return
+            else:
+                log.info("장 시작 후 다시 시도해주세요.")
+                
+                # GUI 로그 추가
+                self._add_gui_log(
+                    f"⚠️ 장외 시간 - 장 시작 후 다시 시도하세요 ({hours}시간 {mins}분 후)",
+                    "red"
+                )
+                return
+        
+        # 장 시작 전이면 경고만
+        if market_state == MarketState.PRE_OPEN:
+            minutes_until_open = self.market_scheduler.get_time_until_market_open()
+            log.info(f"⏰ 장 시작 전입니다. {minutes_until_open}분 후 개장")
+            log.info("실시간 데이터 수신은 시작하지만, 매매는 개장 후 실행됩니다.")
+        
         self.is_running = True
         log.success("🚀 자동매매 시작!")
+        log.success(f"📊 시장 상태: {market_state.value}")
         log.info(f"관심 종목: {', '.join(self.watch_list)}")
         
         # 급등주 모니터링 시작
@@ -397,6 +442,9 @@ class TradingEngine:
         # 현재 상태 출력
         self.risk_manager.print_status()
         
+        # 자동 종료 스케줄 설정
+        self.market_scheduler.schedule_auto_stop(self._auto_stop_callback)
+        
         # QTimer 시작 (논블로킹)
         self.check_timer.start()
         log.info("✅ QTimer 기반 모니터링 시작 (5초 간격)")
@@ -410,13 +458,52 @@ class TradingEngine:
             if not self.is_running:
                 return
             
-            # 장 운영 시간 확인
-            if not self.is_market_open():
-                if datetime.now().time() >= dt_time(15, 30):  # 3시 30분 이후
-                    log.info("장 마감. 자동매매를 종료합니다.")
+            # 시장 상태 확인
+            market_state = self.market_scheduler.get_current_market_state()
+            
+            # 시장 상태별 동작
+            if market_state == MarketState.PRE_OPEN:
+                # 장 시작 전: 준비 상태 로그 (1분마다)
+                current_time = datetime.now()
+                if not hasattr(self, '_last_preopen_log_time'):
+                    self._last_preopen_log_time = current_time
+                
+                if (current_time - self._last_preopen_log_time).seconds >= 60:
+                    minutes_until_open = self.market_scheduler.get_time_until_market_open()
+                    log.info(f"⏰ 장 시작 전 대기 중... {minutes_until_open}분 후 개장")
+                    self._last_preopen_log_time = current_time
+                return
+            
+            elif market_state in [MarketState.CLOSED, MarketState.WEEKEND, MarketState.HOLIDAY]:
+                # 장외 시간: 자동 종료
+                if market_state == MarketState.CLOSED and datetime.now().time() >= dt_time(15, 30):
+                    log.info(f"장 마감 ({market_state.value}). 자동매매를 종료합니다.")
                     self.stop_trading()
                     return
-                # 장 시간 외에는 체크만 하고 리턴
+                # 대기 상태 로그 (5분마다)
+                current_time = datetime.now()
+                if not hasattr(self, '_last_closed_log_time'):
+                    self._last_closed_log_time = current_time
+                
+                if (current_time - self._last_closed_log_time).seconds >= 300:  # 5분
+                    minutes_until_open = self.market_scheduler.get_time_until_market_open()
+                    hours = minutes_until_open // 60
+                    mins = minutes_until_open % 60
+                    log.info(f"⏸️  장외 시간 ({market_state.value}). 장 시작까지: {hours}시간 {mins}분")
+                    self._last_closed_log_time = current_time
+                return
+            
+            elif market_state == MarketState.AFTER_HOURS:
+                # 시간외 매매
+                if not Config.ENABLE_AFTER_HOURS_TRADING:
+                    log.info("시간외 매매 시간입니다. 자동매매를 종료합니다.")
+                    self.stop_trading()
+                    return
+                # 제한적 매매 (급등주 감지 비활성화 등)
+                log.info("⚡ 시간외 매매 중...")
+            
+            # 장 운영 시간 확인 (정규장 또는 시간외)
+            if not self.is_market_open():
                 return
             
             # 하트비트 (1분마다) - 프로그램 정상 실행 확인
@@ -510,6 +597,9 @@ class TradingEngine:
             self.check_timer.stop()
             log.info("⏹️  QTimer 모니터링 중지")
         
+        # 자동 시작/종료 스케줄 취소
+        self.market_scheduler.cancel_scheduled_tasks()
+        
         # 급등주 모니터링 중지
         if self.surge_detector:
             self.surge_detector.stop_monitoring()
@@ -552,23 +642,22 @@ class TradingEngine:
     
     def is_market_open(self) -> bool:
         """
-        장 운영 시간 확인
+        장 운영 시간 확인 (MarketScheduler 기반)
         
         Returns:
             장 운영 중 여부
         """
-        now = datetime.now()
+        market_state = self.market_scheduler.get_current_market_state()
         
-        # 주말 체크
-        if now.weekday() >= 5:  # 토요일(5), 일요일(6)
-            return False
+        # 정규장은 항상 허용
+        if market_state == MarketState.OPEN:
+            return True
         
-        # 장 시간 체크 (9:00 ~ 15:30)
-        current_time = now.time()
-        market_open = dt_time(9, 0)
-        market_close = dt_time(15, 30)
+        # 시간외 매매 설정 시
+        if Config.ENABLE_AFTER_HOURS_TRADING and market_state == MarketState.AFTER_HOURS:
+            return True
         
-        return market_open <= current_time <= market_close
+        return False
     
     def on_price_update(self, stock_code: str, price_data: Dict):
         """
@@ -1197,6 +1286,69 @@ class TradingEngine:
             status['surge_detected_stocks'] = list(self.surge_detected_stocks)
         
         return status
+    
+    def _auto_start_callback(self):
+        """
+        자동 시작 콜백 (MarketScheduler에서 호출)
+        """
+        log.success("=" * 70)
+        log.success("⏰ 자동 시작 시간 도래!")
+        log.success("=" * 70)
+        
+        # GUI 로그 추가
+        self._add_gui_log("⏰ 자동 시작 - 장 시작 시간입니다!", "green")
+        
+        # 실제 자동매매 시작 (재귀 방지)
+        if not self.is_running:
+            # start_trading() 대신 직접 시작 (시장 상태 체크 우회)
+            self.is_running = True
+            log.success("🚀 자동매매 시작!")
+            
+            # 급등주 모니터링 시작
+            if self.surge_detector:
+                self.surge_detector.start_monitoring()
+            
+            # 뉴스 자동 갱신 시작
+            if self.news_enabled and self.news_crawler:
+                interval = getattr(Config, 'NEWS_UPDATE_INTERVAL', 300)
+                self.news_crawler.start_auto_update(interval=interval)
+            
+            # 시작 알림
+            if self.notifier:
+                self.notifier.notify_system_start()
+            
+            # 헬스 모니터링 시작
+            if self.health_monitor:
+                self.health_monitor.start()
+            
+            # 스케줄러 시작
+            if self.scheduler:
+                self.scheduler.start()
+            
+            # 현재 상태 출력
+            self.risk_manager.print_status()
+            
+            # 자동 종료 스케줄 설정
+            self.market_scheduler.schedule_auto_stop(self._auto_stop_callback)
+            
+            # QTimer 시작
+            self.check_timer.start()
+            log.info("✅ QTimer 기반 모니터링 시작 (5초 간격)")
+    
+    def _auto_stop_callback(self):
+        """
+        자동 종료 콜백 (MarketScheduler에서 호출)
+        """
+        log.warning("=" * 70)
+        log.warning("⏰ 자동 종료 시간 도래 (장 마감)")
+        log.warning("=" * 70)
+        
+        # GUI 로그 추가
+        self._add_gui_log("⏰ 자동 종료 - 장 마감 시간입니다!", "orange")
+        
+        # 자동매매 중지
+        if self.is_running:
+            self.stop_trading()
     
     def _safe_shutdown(self):
         """

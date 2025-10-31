@@ -516,8 +516,13 @@ class SurgeDetector:
         Returns:
             통계 딕셔너리
         """
+        candidates_count = len(self.candidates)
         return {
-            'total_candidates': len(self.candidates),
+            # 새로운 키 이름 (trading_engine.py, monitor_gui.py 호환)
+            'candidate_count': candidates_count,
+            'detected_count': self.total_detected,
+            # 기존 키 이름 유지 (하위 호환성)
+            'total_candidates': candidates_count,
             'total_detected': self.total_detected,
             'is_monitoring': self.is_monitoring,
             'detection_count': dict(self.detection_count)
