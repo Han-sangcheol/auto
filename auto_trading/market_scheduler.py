@@ -401,3 +401,4 @@ if __name__ == "__main__":
     print(f"거래 가능: {scheduler.is_trading_allowed()}")
     print(f"장 시작까지: {scheduler.get_time_until_market_open()}분")
 
+
