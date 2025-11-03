@@ -95,11 +95,16 @@ class KiwoomAPI:
         self.order_delay = 0.3  # 주문 간 최소 간격 (초당 최대 3건)
         self.order_count_today = 0  # 일일 주문 카운트
         self.order_history = []  # 최근 주문 시간 기록 (1초 내)
-        self.max_orders_per_day = 100  # 일일 최대 주문 횟수
+        self.max_orders_per_day = 1000  # 일일 최대 주문 횟수 (키움 API 실제 한도)
         self.max_orders_per_second = 3  # 초당 최대 주문 횟수
+        self.order_warning_threshold = 800  # 경고 임계값 (80%)
+        self.order_limit_threshold = 900  # 제한 임계값 (90% - 손절/익절만 허용)
         
         # 데이터 저장
         self.data_cache = {}
+        
+        # 연속조회 지원 (Prev_Next)
+        self.last_prev_next = "0"  # OnReceiveTrData에서 업데이트
         
         # 시그널 연결
         self._connect_signals()
@@ -292,6 +297,8 @@ class KiwoomAPI:
         
         if self.login_event_loop:
             self.login_event_loop.exit()
+        
+        return 0  # 🆕 PyQt5 COM 이벤트 핸들러는 정수 반환 필요
     
     def _wait_for_request(self):
         """
@@ -338,14 +345,17 @@ class KiwoomAPI:
         if self.request_count % 100 == 0:
             log.info(f"📊 API 요청 통계: 총 {self.request_count}건")
     
-    def _wait_for_order(self) -> bool:
+    def _wait_for_order(self, order_type: str = "일반") -> bool:
         """
-        주문 제한 준수
+        주문 제한 준수 (우선순위 지원)
         
         키움 API 주문 제한:
         - 초당 5건 (공식)
         - 우리 제한: 초당 3건 (안전 마진)
-        - 일일 100건 제한 (안전한 운영)
+        - 일일 1000건 제한 (키움 API 실제 한도)
+        
+        Args:
+            order_type: 주문 유형 ("손절", "익절", "일반")
         
         Returns:
             주문 가능 여부
@@ -359,6 +369,27 @@ class KiwoomAPI:
                 f"⛔ 일일 주문 한도 초과: {self.order_count_today}/{self.max_orders_per_day}건"
             )
             return False
+        
+        # 경고 임계값 체크 (80%)
+        if self.order_count_today >= self.order_warning_threshold:
+            if self.order_count_today == self.order_warning_threshold:
+                log.warning(
+                    f"⚠️  일일 주문 한도 80% 도달: {self.order_count_today}/{self.max_orders_per_day}건"
+                )
+        
+        # 제한 임계값 체크 (90% - 손절/익절만 허용)
+        if self.order_count_today >= self.order_limit_threshold:
+            if order_type not in ["손절", "익절"]:
+                log.warning(
+                    f"⚠️  일일 주문 한도 90% 초과 - {order_type} 주문 제한: "
+                    f"{self.order_count_today}/{self.max_orders_per_day}건"
+                )
+                return False
+            else:
+                log.info(
+                    f"✅ 중요 주문({order_type}) 허용: "
+                    f"{self.order_count_today}/{self.max_orders_per_day}건"
+                )
         
         # 1초 이내의 최근 주문만 유지
         self.order_history = [
@@ -486,6 +517,33 @@ class KiwoomAPI:
             log.error(f"잔고 조회 중 오류: {e}")
             return {}
     
+    def get_stock_name(self, stock_code: str) -> str:
+        """
+        종목 코드로 종목명 조회 (API 제한 없음)
+        
+        Args:
+            stock_code: 종목 코드 (예: "005930")
+        
+        Returns:
+            종목명 (예: "삼성전자") 또는 조회 실패 시 종목 코드 반환
+        """
+        try:
+            # GetMasterCodeName: 종목명 조회 (즉시 조회, API 제한 없음)
+            stock_name = self.ocx.dynamicCall(
+                "GetMasterCodeName(QString)",
+                stock_code
+            ).strip()
+            
+            if stock_name:
+                return stock_name
+            else:
+                log.warning(f"종목명 조회 실패 (빈 문자열): {stock_code}")
+                return stock_code
+                
+        except Exception as e:
+            log.error(f"종목명 조회 중 오류 ({stock_code}): {e}")
+            return stock_code
+    
     def get_holdings(self) -> List[Dict]:
         """
         보유 종목 조회
@@ -559,18 +617,20 @@ class KiwoomAPI:
     
     def get_current_price(self, stock_code: str) -> Optional[int]:
         """
-        현재가 조회
+        현재가 조회 (시간외 거래 시간 지원)
         
         Args:
             stock_code: 종목코드
         
         Returns:
             현재가 또는 None
+            - 정규장: 실시간 체결가
+            - 시간외: 마지막 체결가(종가) 또는 시간외 호가
         """
         try:
             self._wait_for_request()
             
-            # OPT10001: 주식기본정보요청
+            # OPT10001: 주식기본정보요청 (시간외에도 마지막 종가 조회 가능)
             self.ocx.dynamicCall(
                 "SetInputValue(QString, QString)",
                 "종목코드",
@@ -589,7 +649,22 @@ class KiwoomAPI:
             if ret == 0:
                 self.request_event_loop.exec_()
                 price_data = self.data_cache.get('current_price', {})
-                return price_data.get('current_price')
+                price = price_data.get('current_price')
+                
+                if price:
+                    # 시간외 거래 시간 체크 (선택적)
+                    from config import Config
+                    from datetime import datetime
+                    current_time = datetime.now().time()
+                    
+                    if Config.ENABLE_AFTER_HOURS_TRADING:
+                        after_hours_start = datetime.strptime(Config.MARKET_AFTER_HOURS_START, "%H:%M").time()
+                        after_hours_end = datetime.strptime(Config.MARKET_AFTER_HOURS_END, "%H:%M").time()
+                        
+                        if after_hours_start <= current_time <= after_hours_end:
+                            log.debug(f"⚡ 시간외 가격 조회: {stock_code} = {price:,}원")
+                
+                return price
             else:
                 log.error(f"현재가 조회 실패: {ret}")
                 return None
@@ -598,36 +673,38 @@ class KiwoomAPI:
             log.error(f"현재가 조회 중 오류: {e}")
             return None
     
-    def get_top_traded_stocks(self, count: int = 100, max_retries: int = 3) -> List[Dict]:
+    def get_top_traded_stocks(self, count: int = 100, use_continuous: bool = True, max_continuous: int = 3) -> List[Dict]:
         """
-        당일 거래대금 상위 종목 조회 (재시도 로직 포함)
+        당일 거래대금 상위 종목 조회 (연속조회 지원)
         
         Args:
-            count: 조회할 종목 수 (최대 100)
-            max_retries: 최대 재시도 횟수
+            count: 기본 조회 수 (1회당 최대 약 100개)
+            use_continuous: 연속조회 사용 여부 (True: 더 많은 종목 조회)
+            max_continuous: 최대 연속조회 횟수 (1-5 권장, 기본 3)
         
         Returns:
-            거래대금 상위 종목 리스트
+            거래대금 상위 종목 리스트 (최대 count * max_continuous 개)
             [{'code': '005930', 'name': '삼성전자', 'price': 75000, 
               'change_rate': 2.5, 'volume': 15000000, 'trade_value': 1125000000000}, ...]
         """
-        for attempt in range(max_retries):
+        all_stocks = []
+        prev_next = 0  # 0: 첫 조회, 2: 연속조회
+        
+        log.info(f"📊 거래대금 상위 종목 조회 시작 (연속조회: {'사용' if use_continuous else '미사용'})")
+        
+        for iteration in range(max_continuous if use_continuous else 1):
             try:
-                if attempt > 0:
-                    wait_time = 2 * attempt  # 2초, 4초
-                    log.info(f"   ⏳ 재시도 대기 ({wait_time}초)...")
-                    time.sleep(wait_time)
-                    log.info(f"   🔄 거래대금 상위 종목 조회 재시도 ({attempt + 1}/{max_retries})")
-                
+                # API 제한 준수
                 self._wait_for_request()
                 
-                log.info(f"📊 거래대금 상위 종목 조회 요청: 최대 {count}개")
+                if iteration > 0:
+                    log.info(f"   🔄 연속조회 {iteration + 1}/{max_continuous}")
                 
-                # OPT10023: 거래량상위요청 (거래대금 기준으로 정렬 가능)
+                # OPT10023: 거래량상위요청 (거래대금 기준)
                 self.ocx.dynamicCall(
                     "SetInputValue(QString, QString)",
                     "시장구분",
-                    "000"  # 000: 코스피, 001: 코스닥, 전체
+                    "000"  # 000: 코스피, 001: 코스닥
                 )
                 self.ocx.dynamicCall(
                     "SetInputValue(QString, QString)",
@@ -637,7 +714,7 @@ class KiwoomAPI:
                 self.ocx.dynamicCall(
                     "SetInputValue(QString, QString)",
                     "관리종목포함",
-                    "0"  # 0: 미포함, 1: 포함
+                    "0"  # 0: 미포함
                 )
                 self.ocx.dynamicCall(
                     "SetInputValue(QString, QString)",
@@ -650,26 +727,28 @@ class KiwoomAPI:
                     "CommRqData(QString, QString, int, QString)",
                     "거래대금상위요청",
                     "OPT10023",
-                    0,
+                    prev_next,  # 🆕 연속조회 파라미터
                     "2003"
                 )
                 
                 if ret == 0:
-                    log.info("   ✅ TR 요청 성공 - 응답 대기 중...")
                     self.request_event_loop.exec_()
-                    top_stocks = self.data_cache.get('top_traded_stocks', [])
+                    batch_stocks = self.data_cache.get('top_traded_stocks', [])
                     
-                    if top_stocks:
-                        log.success(f"   ✅ 거래대금 상위 종목 조회 성공: {len(top_stocks)}개")
-                        # 요청한 개수만큼만 반환
-                        result = top_stocks[:count]
-                        log.info(f"   📋 반환할 종목 수: {len(result)}개")
-                        return result
+                    if batch_stocks:
+                        all_stocks.extend(batch_stocks)
+                        log.success(f"   ✅ 조회 성공: {len(batch_stocks)}개 (누적: {len(all_stocks)}개)")
+                        
+                        # 🆕 연속 데이터 확인 (OnReceiveTrData에서 설정)
+                        if use_continuous and self.last_prev_next == "2":
+                            prev_next = 2  # 다음 조회는 연속조회
+                            log.info(f"   📋 연속 데이터 있음 - 다음 배치 조회 예정")
+                        else:
+                            log.info(f"   📋 연속 데이터 없음 - 조회 종료")
+                            break
                     else:
                         log.warning("   ⚠️  조회 결과가 비어있습니다.")
-                        if attempt < max_retries - 1:
-                            continue
-                        return []
+                        break
                 else:
                     # 에러 코드 해석
                     error_msg = {
@@ -677,28 +756,25 @@ class KiwoomAPI:
                         -201: "조회 과부하",
                         -202: "조회 과부하 (잠시 후 재시도)",
                     }.get(ret, f"알 수 없는 오류 ({ret})")
-                    
                     log.error(f"   ❌ TR 요청 실패: {error_msg}")
-                    
-                    if attempt < max_retries - 1:
-                        log.warning(f"   ⏳ 재시도 예정...")
-                        continue
-                    else:
-                        log.error(f"   ⛔ 최대 재시도 횟수 초과 ({max_retries}회)")
-                        return []
+                    break
                     
             except Exception as e:
-                log.error(f"거래대금 상위 종목 조회 중 오류 (시도 {attempt + 1}/{max_retries}): {e}")
+                log.error(f"거래대금 상위 종목 조회 중 오류 (반복 {iteration + 1}/{max_continuous}): {e}")
                 import traceback
                 log.error(f"상세: {traceback.format_exc()}")
-                
-                if attempt < max_retries - 1:
-                    log.warning(f"   ⏳ 재시도 예정...")
-                else:
-                    log.error(f"   ⛔ 최대 재시도 횟수 초과 ({max_retries}회)")
-                    return []
+                break
         
-        return []
+        # 최종 결과
+        if all_stocks:
+            log.success(f"✅ 거래대금 상위 종목 조회 완료: 총 {len(all_stocks)}개")
+            # 요청한 개수만큼 반환 (초과분 제거)
+            result = all_stocks[:count * max_continuous]
+            log.info(f"   📋 반환: {len(result)}개 종목")
+            return result
+        else:
+            log.warning("⚠️  조회 결과 없음")
+            return []
     
     def buy_order(
         self,
@@ -706,7 +782,8 @@ class KiwoomAPI:
         quantity: int,
         price: int = 0,
         order_type: str = "00",
-        max_retries: int = 3
+        max_retries: int = 3,
+        priority: str = "일반"
     ) -> Optional[str]:
         """
         매수 주문 (재시도 로직 포함)
@@ -717,12 +794,13 @@ class KiwoomAPI:
             price: 가격 (0: 시장가)
             order_type: 주문타입 (00: 지정가, 03: 시장가)
             max_retries: 최대 재시도 횟수
+            priority: 주문 우선순위 ("일반", "손절", "익절")
         
         Returns:
             주문번호 또는 None
         """
         # 주문 제한 체크
-        if not self._wait_for_order():
+        if not self._wait_for_order(order_type=priority):
             log.error(f"❌ 주문 제한 초과 - 매수 주문 불가: {stock_code}")
             return None
         
@@ -782,7 +860,8 @@ class KiwoomAPI:
         quantity: int,
         price: int = 0,
         order_type: str = "00",
-        max_retries: int = 3
+        max_retries: int = 3,
+        priority: str = "일반"
     ) -> Optional[str]:
         """
         매도 주문 (재시도 로직 포함)
@@ -793,12 +872,13 @@ class KiwoomAPI:
             price: 가격 (0: 시장가)
             order_type: 주문타입 (00: 지정가, 03: 시장가)
             max_retries: 최대 재시도 횟수
+            priority: 주문 우선순위 ("일반", "손절", "익절")
         
         Returns:
             주문번호 또는 None
         """
         # 주문 제한 체크
-        if not self._wait_for_order():
+        if not self._wait_for_order(order_type=priority):
             log.error(f"❌ 주문 제한 초과 - 매도 주문 불가: {stock_code}")
             return None
         
@@ -927,6 +1007,11 @@ class KiwoomAPI:
     ):
         """TR 데이터 수신 이벤트"""
         try:
+            # 🆕 연속조회 지원: prev_next 값 저장
+            # "0" = 연속 데이터 없음 (마지막 페이지)
+            # "2" = 연속 데이터 있음 (다음 페이지 요청 가능)
+            self.last_prev_next = prev_next
+            
             if rqname == "예수금상세현황요청":
                 cash = self.ocx.dynamicCall(
                     "GetCommData(QString, QString, int, QString)",
@@ -1038,6 +1123,8 @@ class KiwoomAPI:
         finally:
             if self.request_event_loop:
                 self.request_event_loop.exit()
+        
+        return 0  # 🆕 PyQt5 COM 이벤트 핸들러는 정수 반환 필요
     
     def _on_receive_real_data(self, stock_code, real_type, real_data):
         """실시간 데이터 수신 이벤트"""
@@ -1119,6 +1206,71 @@ class KiwoomAPI:
                 except Exception as e:
                     log.debug(f"호가 데이터 파싱 오류 ({stock_code}): {e}")
             
+            elif real_type in ["주식시간외호가", "ECN주식호가잔량"]:
+                # 🆕 시간외 호가 데이터 수신
+                try:
+                    # 시간외 현재가 조회 (FID 10)
+                    current_price = self.ocx.dynamicCall(
+                        "GetCommRealData(QString, int)",
+                        stock_code, 10
+                    )
+                    
+                    if current_price:
+                        price_data = {
+                            'stock_code': stock_code,
+                            'current_price': abs(int(current_price)),
+                            'change_rate': 0.0,  # 시간외는 등락률 정보가 제한적
+                            'volume': 0,
+                            'is_after_hours': True  # 시간외 데이터 표시
+                        }
+                        
+                        # 처음 3번만 상세 로그
+                        if self._real_data_count[stock_code] <= 3:
+                            log.info(
+                                f"   ⚡ 시간외 가격: {price_data['current_price']:,}원"
+                            )
+                        
+                        # 콜백 호출 (정규장과 동일한 콜백 사용)
+                        if 'real_data' in self.callbacks:
+                            self.callbacks['real_data'](stock_code, price_data)
+                    
+                except Exception as e:
+                    log.debug(f"시간외 호가 데이터 파싱 오류 ({stock_code}): {e}")
+            
+            elif real_type == "주식시간외체결":
+                # 🆕 시간외 체결 데이터 수신
+                try:
+                    current_price = self.ocx.dynamicCall(
+                        "GetCommRealData(QString, int)",
+                        stock_code, 10
+                    )
+                    volume = self.ocx.dynamicCall(
+                        "GetCommRealData(QString, int)",
+                        stock_code, 13
+                    )
+                    
+                    price_data = {
+                        'stock_code': stock_code,
+                        'current_price': abs(int(current_price)),
+                        'change_rate': 0.0,
+                        'volume': int(volume) if volume else 0,
+                        'is_after_hours': True
+                    }
+                    
+                    # 처음 3번만 상세 로그
+                    if self._real_data_count[stock_code] <= 3:
+                        log.info(
+                            f"   ⚡ 시간외 체결: {price_data['current_price']:,}원 | "
+                            f"거래량: {price_data['volume']:,}"
+                        )
+                    
+                    # 콜백 호출
+                    if 'real_data' in self.callbacks:
+                        self.callbacks['real_data'](stock_code, price_data)
+                    
+                except Exception as e:
+                    log.debug(f"시간외 체결 데이터 파싱 오류 ({stock_code}): {e}")
+            
             else:
                 # 다른 유형의 실시간 데이터
                 if self._real_data_count[stock_code] <= 2:
@@ -1128,6 +1280,8 @@ class KiwoomAPI:
             log.error(f"실시간 데이터 처리 중 오류: {e}")
             import traceback
             log.error(f"상세: {traceback.format_exc()}")
+        
+        return 0  # 🆕 PyQt5 COM 이벤트 핸들러는 정수 반환 필요
     
     def _on_receive_chejan_data(self, gubun, item_cnt, fid_list):
         """체결 데이터 수신 이벤트"""
@@ -1142,10 +1296,13 @@ class KiwoomAPI:
                 
         except Exception as e:
             log.error(f"체결 데이터 처리 중 오류: {e}")
+        
+        return 0  # 🆕 PyQt5 COM 이벤트 핸들러는 정수 반환 필요
     
     def _on_receive_msg(self, screen_no, rqname, trcode, msg):
         """메시지 수신 이벤트"""
         log.info(f"키움 메시지: {msg}")
+        return 0  # 🆕 PyQt5 COM 이벤트 핸들러는 정수 반환 필요
     
     def disconnect(self):
         """연결 종료"""

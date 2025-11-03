@@ -20,7 +20,7 @@ if dialog.exec_() == QDialog.Accepted:
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QSpinBox, QDoubleSpinBox, QPushButton, QGroupBox,
-    QTabWidget, QWidget, QMessageBox, QFormLayout
+    QTabWidget, QWidget, QMessageBox, QFormLayout, QCheckBox
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
@@ -183,10 +183,18 @@ class SettingsDialog(QDialog):
         self.max_stocks_spin.setSuffix("개")
         basic_layout.addRow("최대 보유 종목:", self.max_stocks_spin)
         
+        self.auto_trading_ratio_spin = QDoubleSpinBox()
+        self.auto_trading_ratio_spin.setRange(10.0, 100.0)
+        self.auto_trading_ratio_spin.setSingleStep(5.0)
+        self.auto_trading_ratio_spin.setSuffix("%")
+        self.auto_trading_ratio_spin.setToolTip("전체 잔고 중 자동매매에 사용할 비율 (나머지는 수동매매/예비금)")
+        basic_layout.addRow("자동매매 투자 비율:", self.auto_trading_ratio_spin)
+        
         self.position_size_spin = QDoubleSpinBox()
         self.position_size_spin.setRange(1.0, 50.0)
         self.position_size_spin.setSingleStep(1.0)
         self.position_size_spin.setSuffix("%")
+        self.position_size_spin.setToolTip("자동매매 잔고 중 한 종목에 투자할 비율")
         basic_layout.addRow("종목당 투자 비율:", self.position_size_spin)
         
         basic_group.setLayout(basic_layout)
@@ -217,10 +225,51 @@ class SettingsDialog(QDialog):
         profit_loss_group.setLayout(profit_loss_layout)
         layout.addWidget(profit_loss_group)
         
+        # 추가 매수 설정 그룹 (물타기)
+        average_down_group = QGroupBox("추가 매수 (물타기 전략)")
+        average_down_layout = QFormLayout()
+        
+        self.enable_average_down_check = QCheckBox()
+        self.enable_average_down_check.setToolTip(
+            "손실 발생 시 추가 매수로 평균 매수가를 낮추는 전략\n"
+            "주의: 위험도가 높으므로 충분한 테스트 후 사용하세요."
+        )
+        average_down_layout.addRow("추가 매수 활성화:", self.enable_average_down_check)
+        
+        self.average_down_trigger_spin = QDoubleSpinBox()
+        self.average_down_trigger_spin.setRange(0.5, 10.0)
+        self.average_down_trigger_spin.setSingleStep(0.5)
+        self.average_down_trigger_spin.setSuffix("%")
+        self.average_down_trigger_spin.setToolTip(
+            "평균가 대비 이 비율만큼 하락 시 추가 매수 실행\n"
+            "예: 2.5% = 평균가 대비 -2.5% 하락 시 추가 매수"
+        )
+        average_down_layout.addRow("추가 매수 트리거:", self.average_down_trigger_spin)
+        
+        self.max_average_down_spin = QSpinBox()
+        self.max_average_down_spin.setRange(1, 5)
+        self.max_average_down_spin.setToolTip("무한 물타기 방지를 위한 최대 추가 매수 횟수")
+        average_down_layout.addRow("최대 추가 매수 횟수:", self.max_average_down_spin)
+        
+        self.average_down_size_ratio_spin = QDoubleSpinBox()
+        self.average_down_size_ratio_spin.setRange(0.5, 3.0)
+        self.average_down_size_ratio_spin.setSingleStep(0.5)
+        self.average_down_size_ratio_spin.setValue(1.0)
+        self.average_down_size_ratio_spin.setToolTip(
+            "첫 매수 대비 추가 매수할 수량의 비율\n"
+            "1.0 = 첫 매수와 같은 수량\n"
+            "2.0 = 첫 매수의 2배 수량"
+        )
+        average_down_layout.addRow("추가 매수 수량 비율:", self.average_down_size_ratio_spin)
+        
+        average_down_group.setLayout(average_down_layout)
+        layout.addWidget(average_down_group)
+        
         # 경고 메시지
         warning_label = QLabel(
             "⚠️ 주의: 리스크 관리 설정은 신중하게 변경하세요.\n"
-            "손절매 비율이 너무 크면 손실이 확대될 수 있습니다."
+            "손절매 비율이 너무 크면 손실이 확대될 수 있습니다.\n"
+            "추가 매수(물타기)는 위험도가 높으니 신중하게 사용하세요."
         )
         warning_label.setStyleSheet(
             "background-color: #fff3cd; "
@@ -317,10 +366,17 @@ class SettingsDialog(QDialog):
             
             # 리스크 관리
             self.max_stocks_spin.setValue(self.config.MAX_STOCKS)
+            self.auto_trading_ratio_spin.setValue(self.config.AUTO_TRADING_RATIO)
             self.position_size_spin.setValue(self.config.POSITION_SIZE_PERCENT)
             self.stop_loss_spin.setValue(self.config.STOP_LOSS_PERCENT)
             self.take_profit_spin.setValue(self.config.TAKE_PROFIT_PERCENT)
             self.daily_loss_limit_spin.setValue(self.config.DAILY_LOSS_LIMIT_PERCENT)
+            
+            # 추가 매수 (물타기)
+            self.enable_average_down_check.setChecked(self.config.ENABLE_AVERAGE_DOWN)
+            self.average_down_trigger_spin.setValue(self.config.AVERAGE_DOWN_TRIGGER_PERCENT)
+            self.max_average_down_spin.setValue(self.config.MAX_AVERAGE_DOWN_COUNT)
+            self.average_down_size_ratio_spin.setValue(self.config.AVERAGE_DOWN_SIZE_RATIO)
             
             # 급등주 감지
             self.surge_min_change_spin.setValue(self.config.SURGE_MIN_CHANGE_RATE)
@@ -347,10 +403,17 @@ class SettingsDialog(QDialog):
             
             # 리스크 관리
             'MAX_STOCKS': self.max_stocks_spin.value(),
+            'AUTO_TRADING_RATIO': self.auto_trading_ratio_spin.value(),
             'POSITION_SIZE_PERCENT': self.position_size_spin.value(),
             'STOP_LOSS_PERCENT': self.stop_loss_spin.value(),
             'TAKE_PROFIT_PERCENT': self.take_profit_spin.value(),
             'DAILY_LOSS_LIMIT_PERCENT': self.daily_loss_limit_spin.value(),
+            
+            # 추가 매수 (물타기)
+            'ENABLE_AVERAGE_DOWN': self.enable_average_down_check.isChecked(),
+            'AVERAGE_DOWN_TRIGGER_PERCENT': self.average_down_trigger_spin.value(),
+            'MAX_AVERAGE_DOWN_COUNT': self.max_average_down_spin.value(),
+            'AVERAGE_DOWN_SIZE_RATIO': self.average_down_size_ratio_spin.value(),
             
             # 급등주 감지
             'SURGE_MIN_CHANGE_RATE': self.surge_min_change_spin.value(),
@@ -448,10 +511,17 @@ class SettingsDialog(QDialog):
                 
                 # 리스크 관리
                 'MAX_STOCKS': 3,
+                'AUTO_TRADING_RATIO': 80.0,
                 'POSITION_SIZE_PERCENT': 10.0,
                 'STOP_LOSS_PERCENT': 5.0,
                 'TAKE_PROFIT_PERCENT': 10.0,
                 'DAILY_LOSS_LIMIT_PERCENT': 3.0,
+                
+                # 추가 매수 (물타기)
+                'ENABLE_AVERAGE_DOWN': False,
+                'AVERAGE_DOWN_TRIGGER_PERCENT': 2.5,
+                'MAX_AVERAGE_DOWN_COUNT': 2,
+                'AVERAGE_DOWN_SIZE_RATIO': 1.0,
                 
                 # 급등주 감지
                 'SURGE_MIN_CHANGE_RATE': 5.0,
@@ -472,10 +542,16 @@ class SettingsDialog(QDialog):
             self.min_signal_spin.setValue(defaults['MIN_SIGNAL_STRENGTH'])
             
             self.max_stocks_spin.setValue(defaults['MAX_STOCKS'])
+            self.auto_trading_ratio_spin.setValue(defaults['AUTO_TRADING_RATIO'])
             self.position_size_spin.setValue(defaults['POSITION_SIZE_PERCENT'])
             self.stop_loss_spin.setValue(defaults['STOP_LOSS_PERCENT'])
             self.take_profit_spin.setValue(defaults['TAKE_PROFIT_PERCENT'])
             self.daily_loss_limit_spin.setValue(defaults['DAILY_LOSS_LIMIT_PERCENT'])
+            
+            self.enable_average_down_check.setChecked(defaults['ENABLE_AVERAGE_DOWN'])
+            self.average_down_trigger_spin.setValue(defaults['AVERAGE_DOWN_TRIGGER_PERCENT'])
+            self.max_average_down_spin.setValue(defaults['MAX_AVERAGE_DOWN_COUNT'])
+            self.average_down_size_ratio_spin.setValue(defaults['AVERAGE_DOWN_SIZE_RATIO'])
             
             self.surge_min_change_spin.setValue(defaults['SURGE_MIN_CHANGE_RATE'])
             self.surge_min_volume_spin.setValue(defaults['SURGE_MIN_VOLUME_RATIO'])

@@ -166,6 +166,12 @@ class MarketScheduler:
         Returns:
             매매 가능하면 True
         """
+        from config import Config
+        
+        # 🆕 개발 모드: 항상 허용 (시간 제약 없음)
+        if Config.DEVELOPMENT_MODE:
+            return True
+        
         state = self.get_current_market_state()
         
         # 정규장은 항상 허용
@@ -173,7 +179,6 @@ class MarketScheduler:
             return True
         
         # 시간외는 설정에 따라
-        from config import Config
         if state == MarketState.AFTER_HOURS and Config.ENABLE_AFTER_HOURS_TRADING:
             return True
         

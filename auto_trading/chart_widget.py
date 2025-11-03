@@ -180,12 +180,20 @@ class ChartWidget(QWidget):
         """pyqtgraph 미설치 시 대체 UI"""
         fallback_label = QLabel()
         fallback_label.setText(
-            "<h2>차트 기능 비활성화</h2>"
-            "<p>실시간 차트를 사용하려면 pyqtgraph를 설치하세요:</p>"
-            "<pre>pip install pyqtgraph</pre>"
+            "<h2>📊 차트 기능 비활성화</h2>"
+            "<p><b>실시간 차트를 사용하려면 pyqtgraph를 설치하세요:</b></p>"
+            "<pre style='background: #333; color: #0f0; padding: 10px;'>"
+            "pip install pyqtgraph"
+            "</pre>"
+            "<hr>"
+            "<p><b>🌐 외부 차트 보기:</b></p>"
+            "<p>• <a href='https://finance.naver.com'>네이버 금융</a> - 한국 주식 차트</p>"
+            "<p>• <a href='https://finance.yahoo.com'>야후 파이낸스</a> - 글로벌 차트</p>"
+            "<p>• <a href='https://www.tradingview.com'>TradingView</a> - 고급 차트</p>"
         )
         fallback_label.setAlignment(Qt.AlignCenter)
-        fallback_label.setStyleSheet("background-color: #f0f0f0; padding: 50px;")
+        fallback_label.setStyleSheet("background-color: #f8f9fa; padding: 30px; font-size: 14px;")
+        fallback_label.setOpenExternalLinks(True)  # 링크 클릭 가능
         layout.addWidget(fallback_label)
     
     def on_stock_changed(self, stock_code: str):

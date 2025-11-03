@@ -233,36 +233,43 @@ def main():
         log.info("=" * 80)
         log.info("📊 시장 상태 확인")
         log.info("=" * 80)
-        log.info(f"현재 상태: {market_state.value}")
         
-        if market_state == MarketState.OPEN:
-            log.success("✅ 정규 거래 시간입니다. 자동매매를 시작할 수 있습니다.")
-            minutes_until_close = market_scheduler.get_time_until_market_close()
-            hours = minutes_until_close // 60
-            mins = minutes_until_close % 60
-            log.info(f"장 마감까지: {hours}시간 {mins}분")
-        elif market_state == MarketState.PRE_OPEN:
-            minutes_until_open = market_scheduler.get_time_until_market_open()
-            log.info(f"⏰ 장 시작 전입니다. {minutes_until_open}분 후 개장")
-            log.info("실시간 데이터 수신은 시작하지만, 매매는 개장 후 실행됩니다.")
-        elif market_state == MarketState.AFTER_HOURS:
-            log.info("⚡ 시간외 매매 시간입니다.")
-            if Config.ENABLE_AFTER_HOURS_TRADING:
-                log.info("시간외 매매가 활성화되어 있습니다.")
-            else:
-                log.warning("시간외 매매가 비활성화되어 있습니다.")
-        elif market_state in [MarketState.WEEKEND, MarketState.HOLIDAY, MarketState.CLOSED]:
-            minutes_until_open = market_scheduler.get_time_until_market_open()
-            hours = minutes_until_open // 60
-            mins = minutes_until_open % 60
-            log.warning(f"⚠️  현재 장외 시간입니다 ({market_state.value})")
-            log.warning(f"장 시작까지: {hours}시간 {mins}분")
+        # 🆕 개발 모드 확인
+        if Config.DEVELOPMENT_MODE:
+            log.warning("🔧 개발 모드 활성화 - 시간 제약 없이 실행됩니다")
+            log.warning(f"   실제 시장 상태: {market_state.value}")
+            log.warning("   모든 기능이 활성화됩니다 (테스트/개발 목적)")
+        else:
+            log.info(f"현재 상태: {market_state.value}")
             
-            if Config.AUTO_START_ENABLED:
-                log.info("✅ 자동 시작이 활성화되어 있습니다.")
-                log.info("'자동매매 시작' 버튼을 누르면 장 시작 시 자동으로 시작됩니다.")
-            else:
-                log.info("장 시작 후 '자동매매 시작' 버튼을 눌러주세요.")
+            if market_state == MarketState.OPEN:
+                log.success("✅ 정규 거래 시간입니다. 자동매매를 시작할 수 있습니다.")
+                minutes_until_close = market_scheduler.get_time_until_market_close()
+                hours = minutes_until_close // 60
+                mins = minutes_until_close % 60
+                log.info(f"장 마감까지: {hours}시간 {mins}분")
+            elif market_state == MarketState.PRE_OPEN:
+                minutes_until_open = market_scheduler.get_time_until_market_open()
+                log.info(f"⏰ 장 시작 전입니다. {minutes_until_open}분 후 개장")
+                log.info("실시간 데이터 수신은 시작하지만, 매매는 개장 후 실행됩니다.")
+            elif market_state == MarketState.AFTER_HOURS:
+                log.info("⚡ 시간외 매매 시간입니다.")
+                if Config.ENABLE_AFTER_HOURS_TRADING:
+                    log.info("시간외 매매가 활성화되어 있습니다.")
+                else:
+                    log.warning("시간외 매매가 비활성화되어 있습니다.")
+            elif market_state in [MarketState.WEEKEND, MarketState.HOLIDAY, MarketState.CLOSED]:
+                minutes_until_open = market_scheduler.get_time_until_market_open()
+                hours = minutes_until_open // 60
+                mins = minutes_until_open % 60
+                log.warning(f"⚠️  현재 장외 시간입니다 ({market_state.value})")
+                log.warning(f"장 시작까지: {hours}시간 {mins}분")
+                
+                if Config.AUTO_START_ENABLED:
+                    log.info("✅ 자동 시작이 활성화되어 있습니다.")
+                    log.info("'자동매매 시작' 버튼을 누르면 장 시작 시 자동으로 시작됩니다.")
+                else:
+                    log.info("장 시작 후 '자동매매 시작' 버튼을 눌러주세요.")
         
         log.info("=" * 80)
         

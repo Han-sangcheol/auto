@@ -11,7 +11,7 @@
 - 중복 감지 방지 (쿨다운 타임)
 
 [급등 기준]
-1. 전일 대비 상승률 >= 설정값 (기본: 5%)
+1. 모니터링 시작 이후 추가 상승률 >= 설정값 (기본: 5%)
 2. 거래량 >= 평균 거래량 x 배수 (기본: 2배)
 
 [사용 방법]
@@ -54,9 +54,18 @@ class SurgeCandidate:
         self.current_volume = volume
         self.current_change_rate = change_rate
         
+        # 🆕 모니터링 시작 시점 기준 (급등 판단용)
+        self.monitoring_start_price = price  # 모니터링 시작 시점 가격
+        self.monitoring_start_change_rate = change_rate  # 모니터링 시작 시점 전일 대비 상승률
+        
         # 거래량 이력 (평균 계산용)
         self.volume_history: List[int] = [volume]
         self.max_volume_history = 10
+        
+        # 🆕 뉴스 감성 분석 결과
+        self.news_score = 0  # -100 ~ +100 (부정 ~ 긍정)
+        self.news_count = 0  # 분석된 뉴스 개수
+        self.latest_news = []  # 최근 뉴스 제목 리스트 (최대 3개)
         
         # 🆕 호가 데이터 (선제적 매수 판단)
         self.bid_volume = 0  # 매수 총잔량
@@ -99,6 +108,19 @@ class SurgeCandidate:
             self.bid_ask_ratio = bid_volume / ask_volume
         else:
             self.bid_ask_ratio = 0
+    
+    def update_news_sentiment(self, news_score: int, news_count: int, news_titles: List[str]):
+        """
+        🆕 뉴스 감성 분석 결과 업데이트
+        
+        Args:
+            news_score: 뉴스 감성 점수 (-100 ~ +100)
+            news_count: 분석된 뉴스 개수
+            news_titles: 뉴스 제목 리스트
+        """
+        self.news_score = news_score
+        self.news_count = news_count
+        self.latest_news = news_titles[:3]  # 최대 3개만 저장
     
     def get_buying_pressure(self) -> float:
         """
@@ -154,25 +176,70 @@ class SurgeCandidate:
             return 0
         return self.current_volume / avg_volume
     
+    def get_monitoring_change_rate(self) -> float:
+        """
+        모니터링 시작 시점 대비 추가 상승률 계산
+        
+        Returns:
+            추가 상승률 (%) 
+            예: 시작 시 10% → 현재 15% = 추가 상승 5%
+        """
+        return self.current_change_rate - self.monitoring_start_change_rate
+    
+    def get_adjusted_surge_threshold(self, base_threshold: float) -> float:
+        """
+        🆕 뉴스 점수에 따른 급등 기준 동적 조정
+        
+        Args:
+            base_threshold: 기본 급등 기준 (%)
+        
+        Returns:
+            조정된 급등 기준 (%)
+            
+        Examples:
+            - 뉴스 점수 +50 (호재), 기본 5% → 2.5% (50% 완화)
+            - 뉴스 점수 0 (중립), 기본 5% → 5% (조정 없음)
+            - 뉴스 점수 -50 (악재), 기본 5% → 5% (급등 기준은 유지)
+        """
+        from config import Config
+        
+        # 뉴스 분석이 비활성화되었거나 뉴스가 없으면 기본값
+        if not Config.ENABLE_NEWS_ANALYSIS or self.news_count == 0:
+            return base_threshold
+        
+        # 긍정 뉴스 (호재): 급등 기준 완화
+        if self.news_score >= Config.NEWS_BUY_THRESHOLD:
+            # 점수 비율 계산 (0 ~ 1)
+            score_ratio = min(self.news_score / 100, 1.0)
+            # 완화 비율 적용 (예: 50% 완화)
+            adjust_ratio = Config.NEWS_POSITIVE_SURGE_ADJUST / 100
+            adjusted_threshold = base_threshold * (1 - adjust_ratio * score_ratio)
+            return adjusted_threshold
+        
+        # 부정 뉴스 또는 중립: 급등 기준 유지
+        return base_threshold
+    
     def is_surge_detected(
         self,
-        min_change_rate: float,
+        min_monitoring_change_rate: float,
         min_volume_ratio: float,
         min_buying_pressure: float = 60.0  # 최소 매수 압력 점수
     ) -> bool:
         """
-        급등 조건 확인 (호가 분석 포함)
+        급등 조건 확인 (모니터링 시작 시점 대비, 뉴스 점수 반영)
         
         Args:
-            min_change_rate: 최소 상승률 (%)
+            min_monitoring_change_rate: 모니터링 시작 이후 최소 추가 상승률 (%)
             min_volume_ratio: 최소 거래량 비율
             min_buying_pressure: 최소 매수 압력 점수 (0~100, 기본 60)
         
         Returns:
             급등 여부
         """
-        # 1. 기본 조건: 상승률
-        if self.current_change_rate < min_change_rate:
+        # 1. 기본 조건: 모니터링 시작 이후 추가 상승률 (🆕 뉴스 점수 반영)
+        adjusted_threshold = self.get_adjusted_surge_threshold(min_monitoring_change_rate)
+        monitoring_change = self.get_monitoring_change_rate()
+        if monitoring_change < adjusted_threshold:
             return False
         
         # 2. 기본 조건: 거래량 비율
@@ -234,7 +301,8 @@ class SurgeDetector:
         
         # 설정값
         self.candidate_count = Config.SURGE_CANDIDATE_COUNT
-        self.min_change_rate = Config.SURGE_MIN_CHANGE_RATE
+        self.min_change_rate = Config.SURGE_MIN_CHANGE_RATE  # 전일 대비 (레퍼런스용)
+        self.min_monitoring_change_rate = Config.SURGE_MONITORING_CHANGE_RATE  # 🆕 모니터링 시작 이후 추가 상승률
         self.min_volume_ratio = Config.SURGE_MIN_VOLUME_RATIO
         self.cooldown_minutes = Config.SURGE_COOLDOWN_MINUTES
         
@@ -249,11 +317,26 @@ class SurgeDetector:
         self.total_detected = 0
         self.detection_count = defaultdict(int)
         
+        # 🆕 뉴스 분석 (선택적)
+        self.news_crawler = None
+        self.sentiment_analyzer = None
+        if Config.ENABLE_NEWS_ANALYSIS:
+            try:
+                from news_crawler import NewsCrawler
+                from sentiment_analyzer import SentimentAnalyzer
+                
+                self.news_crawler = NewsCrawler()
+                self.sentiment_analyzer = SentimentAnalyzer()
+                log.info("✅ 뉴스 분석 모듈 로드 완료")
+            except Exception as e:
+                log.warning(f"⚠️  뉴스 분석 모듈 로드 실패 (기능 비활성화): {e}")
+        
         log.info(
             f"급등주 감지기 초기화: "
             f"후보 {self.candidate_count}개, "
-            f"상승률 >= {self.min_change_rate}%, "
-            f"거래량 >= {self.min_volume_ratio}배"
+            f"모니터링 추가 상승률 >= {self.min_monitoring_change_rate}%, "
+            f"거래량 >= {self.min_volume_ratio}배, "
+            f"뉴스 분석: {'활성화' if self.news_crawler else '비활성화'}"
         )
     
     def initialize(self) -> bool:
@@ -267,11 +350,16 @@ class SurgeDetector:
             log.info("=" * 70)
             log.info("🚀 급등주 감지기 초기화 시작")
             log.info("=" * 70)
-            log.info(f"📊 설정: 후보 {self.candidate_count}개, 상승률 >={self.min_change_rate}%, 거래량 >={self.min_volume_ratio}배")
+            log.info(f"📊 설정: 후보 {self.candidate_count}개, 모니터링 추가 상승률 >={self.min_monitoring_change_rate}%, 거래량 >={self.min_volume_ratio}배")
             
-            # 거래대금 상위 종목 조회
+            # 거래대금 상위 종목 조회 (🆕 연속조회 지원)
             log.info("1️⃣ 거래대금 상위 종목 조회 중...")
-            top_stocks = self.kiwoom.get_top_traded_stocks(self.candidate_count)
+            from config import Config
+            top_stocks = self.kiwoom.get_top_traded_stocks(
+                count=self.candidate_count,
+                use_continuous=Config.SURGE_USE_CONTINUOUS,
+                max_continuous=Config.SURGE_MAX_CONTINUOUS
+            )
             
             if not top_stocks:
                 log.error("❌ 거래대금 상위 종목 조회 실패 - 결과가 비어있습니다.")
@@ -304,6 +392,11 @@ class SurgeDetector:
                 log.info(f"   ... 외 {len(top_stocks) - 5}개")
             
             log.success(f"✅ 급등주 후보군 등록 완료: {len(self.candidates)}개 종목")
+            
+            # 🆕 뉴스 분석 (선택적)
+            if self.news_crawler and self.sentiment_analyzer:
+                log.info("2-1️⃣ 뉴스 분석 중...")
+                self._analyze_news_for_candidates()
             
             # 실시간 시세 등록
             log.info("3️⃣ 급등주 후보군 실시간 시세 등록 중...")
@@ -362,6 +455,71 @@ class SurgeDetector:
         """모니터링 중지"""
         self.is_monitoring = False
         log.info("급등주 모니터링 중지")
+    
+    def _analyze_news_for_candidates(self):
+        """
+        🆕 후보군 종목들의 뉴스 분석
+        
+        각 후보 종목에 대해 최신 뉴스를 수집하고 감성 분석을 수행합니다.
+        뉴스 점수는 급등 기준 조정에 사용됩니다.
+        """
+        if not self.news_crawler or not self.sentiment_analyzer:
+            return
+        
+        try:
+            analyzed_count = 0
+            positive_count = 0
+            negative_count = 0
+            
+            for stock_code, candidate in self.candidates.items():
+                try:
+                    # 뉴스 수집 (최대 10개)
+                    news_list = self.news_crawler.get_latest_news(stock_code, max_count=10)
+                    
+                    if len(news_list) >= Config.NEWS_MIN_COUNT:
+                        # 감성 분석
+                        analysis = self.sentiment_analyzer.analyze_news_list(news_list)
+                        
+                        # 후보 종목에 뉴스 점수 업데이트
+                        news_titles = [news.title for news in news_list[:3]]
+                        candidate.update_news_sentiment(
+                            news_score=analysis['average_score'],
+                            news_count=len(news_list),
+                            news_titles=news_titles
+                        )
+                        
+                        analyzed_count += 1
+                        
+                        # 통계
+                        if analysis['average_score'] >= Config.NEWS_BUY_THRESHOLD:
+                            positive_count += 1
+                            log.info(
+                                f"   ✅ 호재: {candidate.name}({stock_code}) "
+                                f"점수: {analysis['average_score']:+d}/100 "
+                                f"(뉴스 {len(news_list)}개)"
+                            )
+                        elif analysis['average_score'] <= Config.NEWS_SELL_THRESHOLD:
+                            negative_count += 1
+                            log.warning(
+                                f"   ⚠️  악재: {candidate.name}({stock_code}) "
+                                f"점수: {analysis['average_score']:+d}/100 "
+                                f"(뉴스 {len(news_list)}개)"
+                            )
+                    
+                    # API 과부하 방지
+                    import time
+                    time.sleep(0.5)
+                    
+                except Exception as e:
+                    log.debug(f"   뉴스 분석 실패 ({stock_code}): {e}")
+            
+            log.success(
+                f"✅ 뉴스 분석 완료: {analyzed_count}개 종목 "
+                f"(호재: {positive_count}개, 악재: {negative_count}개)"
+            )
+            
+        except Exception as e:
+            log.error(f"뉴스 분석 중 오류: {e}")
     
     def on_price_update(self, stock_code: str, price_data: Dict):
         """
@@ -458,9 +616,9 @@ class SurgeDetector:
             if not candidate.can_detect_again(self.cooldown_minutes):
                 return
             
-            # 급등 조건 확인
+            # 급등 조건 확인 (모니터링 시작 이후 추가 상승률 기준)
             if not candidate.is_surge_detected(
-                self.min_change_rate,
+                self.min_monitoring_change_rate,
                 self.min_volume_ratio
             ):
                 return
@@ -472,6 +630,7 @@ class SurgeDetector:
             
             volume_ratio = candidate.get_volume_ratio()
             buying_pressure = candidate.get_buying_pressure()
+            monitoring_change = candidate.get_monitoring_change_rate()
             
             # 🆕 호가 정보 포함
             orderbook_info = ""
@@ -482,12 +641,26 @@ class SurgeDetector:
                     f"체결강도 {candidate.execution_strength}%)"
                 )
             
+            # 🆕 뉴스 정보 포함
+            news_info = ""
+            if candidate.news_count > 0:
+                news_sentiment = "호재" if candidate.news_score >= Config.NEWS_BUY_THRESHOLD else \
+                                "악재" if candidate.news_score <= Config.NEWS_SELL_THRESHOLD else "중립"
+                news_info = f" | 뉴스: {news_sentiment} ({candidate.news_score:+d}점, {candidate.news_count}개)"
+                
+                # 조정된 급등 기준 표시
+                adjusted_threshold = candidate.get_adjusted_surge_threshold(self.min_monitoring_change_rate)
+                if adjusted_threshold != self.min_monitoring_change_rate:
+                    news_info += f" → 기준 {self.min_monitoring_change_rate:.1f}%→{adjusted_threshold:.1f}%"
+            
             log.warning(
                 f"🚀 급등 감지! {candidate.name} ({candidate.code}) | "
-                f"상승률: {candidate.current_change_rate:+.2f}% | "
+                f"전일대비: {candidate.current_change_rate:+.2f}% "
+                f"(시작시점: {candidate.monitoring_start_change_rate:+.2f}%, 추가상승: {monitoring_change:+.2f}%) | "
                 f"거래량: {volume_ratio:.2f}배 | "
                 f"현재가: {candidate.current_price:,}원"
                 f"{orderbook_info}"
+                f"{news_info}"
             )
             
             # 콜백 호출

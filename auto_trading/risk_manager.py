@@ -53,27 +53,119 @@ class Position:
         self.stock_code = stock_code
         self.stock_name = stock_name
         self.quantity = quantity
-        self.entry_price = entry_price
+        self.entry_price = entry_price  # 최초 매수가
+        self.avg_price = entry_price    # 평균 매수가 (추가 매수 시 변경됨)
         self.entry_time = entry_time or datetime.now()
         self.current_price = entry_price
-        self.stop_loss_price = int(entry_price * (1 - Config.STOP_LOSS_PERCENT / 100))
-        self.take_profit_price = int(entry_price * (1 + Config.TAKE_PROFIT_PERCENT / 100))
+        
+        # 추가 매수 추적
+        self.average_down_count = 0  # 추가 매수 횟수
+        self.average_down_prices = []  # 추가 매수가 기록
+        self.total_invested = entry_price * quantity  # 총 투자 금액
+        
+        # 🆕 뉴스 감성 분석 결과
+        self.news_score = 0  # -100 ~ +100 (부정 ~ 긍정)
+        
+        # 🆕 매도 제어
+        self.sell_blocked = False  # True: 자동 매도 금지 (손절/익절 제외)
+        
+        # 손절/익절가는 평균가 기준으로 계산
+        self.update_stop_profit_prices()
+    
+    def update_stop_profit_prices(self):
+        """손절/익절가 재계산 (평균가 기준)"""
+        self.stop_loss_price = int(self.avg_price * (1 - Config.STOP_LOSS_PERCENT / 100))
+        self.take_profit_price = int(self.avg_price * (1 + Config.TAKE_PROFIT_PERCENT / 100))
+    
+    def add_position(self, add_quantity: int, add_price: int):
+        """추가 매수 (물타기)"""
+        self.average_down_count += 1
+        self.average_down_prices.append({
+            'price': add_price,
+            'quantity': add_quantity,
+            'time': datetime.now()
+        })
+        
+        # 평균 매수가 재계산
+        self.total_invested += add_price * add_quantity
+        self.quantity += add_quantity
+        self.avg_price = int(self.total_invested / self.quantity)
+        
+        # 손절/익절가 재계산
+        self.update_stop_profit_prices()
+        
+        log.info(f"추가 매수 완료: 수량 {add_quantity}주 @ {add_price:,}원")
+        log.info(f"평균가 변경: {self.entry_price:,}원 -> {self.avg_price:,}원")
+        log.info(f"총 수량: {self.quantity}주, 총 투자: {self.total_invested:,}원")
+    
+    def should_average_down(self) -> bool:
+        """추가 매수 조건 확인"""
+        if not Config.ENABLE_AVERAGE_DOWN:
+            return False
+        
+        # 최대 추가 매수 횟수 체크
+        if self.average_down_count >= Config.MAX_AVERAGE_DOWN_COUNT:
+            return False
+        
+        # 현재 손실률 계산 (평균가 기준)
+        current_loss_pct = ((self.current_price - self.avg_price) / self.avg_price) * 100
+        
+        # 추가 매수 트리거 체크 (각 레벨별로 1회만)
+        # 예: -2.5%, -5.0% (손절 -7.5%인 경우)
+        trigger_level = (self.average_down_count + 1) * Config.AVERAGE_DOWN_TRIGGER_PERCENT
+        
+        if current_loss_pct <= -trigger_level and current_loss_pct > -Config.STOP_LOSS_PERCENT:
+            return True
+        
+        return False
     
     def update_price(self, current_price: int):
         """현재가 업데이트"""
         self.current_price = current_price
     
     def get_profit_loss(self) -> int:
-        """손익 금액 계산"""
-        return (self.current_price - self.entry_price) * self.quantity
+        """손익 금액 계산 (평균가 기준)"""
+        return (self.current_price - self.avg_price) * self.quantity
     
     def get_profit_loss_percent(self) -> float:
-        """손익률 계산"""
-        return ((self.current_price - self.entry_price) / self.entry_price) * 100
+        """손익률 계산 (평균가 기준)"""
+        return ((self.current_price - self.avg_price) / self.avg_price) * 100
+    
+    def get_adjusted_stop_loss_percent(self) -> float:
+        """
+        🆕 뉴스 점수에 따른 손절 기준 동적 조정
+        
+        Returns:
+            조정된 손절 기준 (%)
+            
+        Examples:
+            - 뉴스 점수 -50 (악재), 기본 3% → 1.5% (50% 강화)
+            - 뉴스 점수 0 (중립), 기본 3% → 3% (조정 없음)
+            - 뉴스 점수 +50 (호재), 기본 3% → 3% (손절 기준은 유지)
+        """
+        base_percent = Config.STOP_LOSS_PERCENT
+        
+        # 뉴스 분석이 비활성화되었거나 뉴스 점수가 없으면 기본값
+        if not Config.ENABLE_NEWS_ANALYSIS or self.news_score == 0:
+            return base_percent
+        
+        # 부정 뉴스 (악재): 손절 기준 강화 (더 빨리 손절)
+        if self.news_score <= Config.NEWS_SELL_THRESHOLD:
+            # 점수 비율 계산 (0 ~ 1)
+            score_ratio = min(abs(self.news_score) / 100, 1.0)
+            # 강화 비율 적용 (예: 50% 강화)
+            adjust_ratio = Config.NEWS_NEGATIVE_STOPLOSS_ADJUST / 100
+            adjusted_percent = base_percent * (1 - adjust_ratio * score_ratio)
+            return adjusted_percent
+        
+        # 긍정 뉴스 또는 중립: 손절 기준 유지
+        return base_percent
     
     def is_stop_loss_triggered(self) -> bool:
-        """손절매 조건 확인"""
-        return self.current_price <= self.stop_loss_price
+        """손절매 조건 확인 (🆕 뉴스 점수 반영)"""
+        adjusted_percent = self.get_adjusted_stop_loss_percent()
+        adjusted_stop_loss_price = int(self.avg_price * (1 - adjusted_percent / 100))
+        return self.current_price <= adjusted_stop_loss_price
     
     def is_take_profit_triggered(self) -> bool:
         """익절매 조건 확인"""
@@ -82,8 +174,9 @@ class Position:
     def __repr__(self):
         return (
             f"Position({self.stock_code}, {self.quantity}주, "
-            f"매입: {self.entry_price:,}원, 현재: {self.current_price:,}원, "
-            f"손익률: {self.get_profit_loss_percent():+.2f}%)"
+            f"평균가: {self.avg_price:,}원, 현재: {self.current_price:,}원, "
+            f"손익률: {self.get_profit_loss_percent():+.2f}%, "
+            f"추가매수: {self.average_down_count}회)"
         )
 
 
@@ -176,6 +269,67 @@ class RiskManager:
             return True
         return False
     
+    def check_average_down(self, position: Position) -> bool:
+        """
+        추가 매수 조건 확인
+        
+        Args:
+            position: 포지션 정보
+        
+        Returns:
+            추가 매수 필요 여부
+        """
+        if position.should_average_down():
+            loss_pct = position.get_profit_loss_percent()
+            log.warning("=" * 70)
+            log.warning(f"📉 추가 매수 조건 감지: {position.stock_code}")
+            log.warning(f"   평균가: {position.avg_price:,}원")
+            log.warning(f"   현재가: {position.current_price:,}원")
+            log.warning(f"   손실률: {loss_pct:.2f}%")
+            log.warning(f"   추가 매수 횟수: {position.average_down_count}/{Config.MAX_AVERAGE_DOWN_COUNT}")
+            log.warning("=" * 70)
+            return True
+        return False
+    
+    def execute_average_down(self, stock_code: str, current_price: int) -> bool:
+        """
+        추가 매수 실행
+        
+        Args:
+            stock_code: 종목 코드
+            current_price: 현재가
+        
+        Returns:
+            추가 매수 성공 여부
+        """
+        position = self.positions.get(stock_code)
+        if not position:
+            return False
+        
+        # 추가 매수 수량 계산
+        initial_quantity = int(position.total_invested / position.entry_price)  # 최초 매수 수량
+        add_quantity = int(initial_quantity * Config.AVERAGE_DOWN_SIZE_RATIO)
+        if add_quantity < 1:
+            add_quantity = 1
+        
+        # 필요 금액 계산
+        required_amount = current_price * add_quantity
+        
+        # 잔고 확인
+        if self.current_balance < required_amount:
+            log.warning(f"❌ 추가 매수 불가: 잔고 부족 ({self.current_balance:,}원 < {required_amount:,}원)")
+            return False
+        
+        # 잔고 차감
+        self.current_balance -= required_amount
+        
+        # 포지션에 추가
+        position.add_position(add_quantity, current_price)
+        
+        log.success(f"✅ 추가 매수 내부 처리 완료: {add_quantity}주 @ {current_price:,}원")
+        
+        return True
+    
     def calculate_position_size(self, price: int) -> int:
         """
         매수 가능 수량 계산
@@ -186,18 +340,28 @@ class RiskManager:
         Returns:
             매수 가능 수량
         """
-        # 계좌 잔고의 일정 비율만 사용
-        available_cash = self.current_balance * (Config.POSITION_SIZE_PERCENT / 100)
+        # 1단계: 전체 잔고 중 자동매매 사용 비율 적용
+        auto_trading_balance = self.current_balance * (Config.AUTO_TRADING_RATIO / 100)
+        
+        # 2단계: 자동매매 잔고 중 종목당 비율 적용
+        available_cash = auto_trading_balance * (Config.POSITION_SIZE_PERCENT / 100)
         
         # 매수 가능 수량 계산
         quantity = int(available_cash / price)
         
+        # 디버깅 로그
+        log.info(f"[매수 수량 계산]")
+        log.info(f"   총 잔고: {self.current_balance:,}원")
+        log.info(f"   자동투자 비율: {Config.AUTO_TRADING_RATIO}% -> {auto_trading_balance:,.0f}원")
+        log.info(f"   종목당 비율: {Config.POSITION_SIZE_PERCENT}% -> {available_cash:,.0f}원")
+        log.info(f"   현재가: {price:,}원")
+        log.info(f"   계산 수량: {quantity}주")
+        
         # 최소 1주 이상
         if quantity < 1:
-            log.warning(f"자금 부족: 매수 가능 수량 {quantity}주 (가격: {price:,}원)")
+            log.warning(f"❌ 자금 부족: 매수 가능 수량 {quantity}주 (가격: {price:,}원)")
             return 0
         
-        log.debug(f"포지션 크기 계산: {quantity}주 @ {price:,}원 = {quantity * price:,}원")
         return quantity
     
     def check_daily_loss_limit(self) -> bool:
@@ -210,16 +374,25 @@ class RiskManager:
         if self.daily_start_balance == 0:
             return False
         
-        # 오늘 총 손실 계산
-        daily_loss = self.daily_start_balance - self.current_balance
+        # 현재 총 자산 계산 (잔고 + 보유 종목 평가액)
+        positions_value = sum(
+            position.current_price * position.quantity
+            for position in self.positions.values()
+        )
+        current_total_asset = self.current_balance + positions_value
+        
+        # 오늘 총 손실 계산 (시작 잔고 - 현재 총 자산)
+        daily_loss = self.daily_start_balance - current_total_asset
         daily_loss_pct = (daily_loss / self.daily_start_balance) * 100
         
-        # 손실 한도 초과 확인
-        if daily_loss_pct >= Config.DAILY_LOSS_LIMIT_PERCENT:
+        # 손실 한도 초과 확인 (손실이 양수일 때만)
+        if daily_loss > 0 and daily_loss_pct >= Config.DAILY_LOSS_LIMIT_PERCENT:
             log.critical(
                 f"⛔ 일일 손실 한도 초과: {daily_loss_pct:.2f}% "
                 f"(기준: {Config.DAILY_LOSS_LIMIT_PERCENT}%) | "
-                f"손실금액: {daily_loss:,}원"
+                f"손실금액: {daily_loss:,}원 | "
+                f"시작자산: {self.daily_start_balance:,}원, "
+                f"현재자산: {current_total_asset:,}원 (잔고: {self.current_balance:,}원 + 평가액: {positions_value:,}원)"
             )
             return True
         
@@ -347,7 +520,7 @@ class RiskManager:
         gross_profit_loss_pct = position.get_profit_loss_percent()
         
         # 실제 순 손익 (매수 시 수수료도 고려)
-        buy_amount = position.quantity * position.buy_price
+        buy_amount = position.quantity * position.entry_price
         buy_fee = self.fee_calculator.calculate_buy_fee(buy_amount)
         net_profit_loss = gross_profit_loss - buy_fee - sell_fee
         net_profit_loss_pct = (net_profit_loss / buy_amount) * 100

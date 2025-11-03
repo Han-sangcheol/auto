@@ -20,21 +20,22 @@ window.show()
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QTableWidget, QTableWidgetItem, QTextEdit, QGroupBox, QTabWidget,
-    QPushButton, QMessageBox, QMenuBar, QAction
+    QPushButton, QMessageBox, QMenuBar, QAction, QCheckBox
 )
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QFont, QColor
 from datetime import datetime
 from typing import Optional
 from market_scheduler import MarketScheduler, MarketState
+from config import Config
 
 # 차트 위젯 (선택적 로드)
 try:
-    from chart_widget import ChartWidget
+    from advanced_chart_widget import AdvancedChartWidget
     CHART_AVAILABLE = True
 except ImportError:
     CHART_AVAILABLE = False
-    print("⚠️  chart_widget.py를 로드할 수 없습니다.")
+    print("⚠️  advanced_chart_widget.py를 로드할 수 없습니다.")
 
 # 통계 위젯 (선택적 로드)
 try:
@@ -61,6 +62,17 @@ class MonitorWindow(QMainWindow):
         self.trading_engine = trading_engine
         self.chart_widget = None  # 차트 위젯 참조
         self.market_scheduler = MarketScheduler()  # 시장 스케줄러
+        
+        # 🆕 뉴스 크롤러 (선택적)
+        self.news_crawler = None
+        if Config.ENABLE_NEWS_ANALYSIS:
+            try:
+                from news_crawler import NewsCrawler
+                self.news_crawler = NewsCrawler()
+                print("✅ 뉴스 크롤러 초기화 완료")
+            except Exception as e:
+                print(f"⚠️  뉴스 크롤러 로드 실패: {e}")
+        
         self.init_ui()
         self.setup_timer()
         
@@ -81,11 +93,10 @@ class MonitorWindow(QMainWindow):
         monitoring_tab = self.create_monitoring_tab()
         self.tab_widget.addTab(monitoring_tab, "📊 모니터링")
         
-        # 탭 2: 차트 (pyqtgraph 사용 가능 시)
+        # 탭 2: 차트 (plotly + yfinance 사용 가능 시)
         if CHART_AVAILABLE:
-            # trading_engine의 database를 전달
-            database = getattr(self.trading_engine, 'database', None)
-            self.chart_widget = ChartWidget(database=database)
+            # trading_engine를 전달
+            self.chart_widget = AdvancedChartWidget(self.trading_engine)
             self.tab_widget.addTab(self.chart_widget, "📈 차트")
             # 초기 관심 종목 등록
             self.initialize_chart_stocks()
@@ -143,13 +154,19 @@ class MonitorWindow(QMainWindow):
             # 종목명 조회 시도
             stock_name = stock_code  # 기본값
             try:
-                # 실제로는 kiwoom API에서 종목명 조회 가능
-                # 여기서는 간단히 코드만 사용
-                pass
-            except:
-                pass
+                # 🆕 키움 API에서 종목명 조회
+                if hasattr(self.trading_engine, 'kiwoom'):
+                    fetched_name = self.trading_engine.kiwoom.get_stock_name(stock_code)
+                    if fetched_name and fetched_name != stock_code:
+                        stock_name = fetched_name
+            except Exception as e:
+                print(f"종목명 조회 실패 ({stock_code}): {e}")
             
             self.chart_widget.add_stock(stock_code, stock_name)
+        
+        # 🆕 보유 종목도 차트에 추가
+        for stock_code, position in self.trading_engine.risk_manager.positions.items():
+            self.chart_widget.add_stock(stock_code, position.stock_name)
     
     def create_menu_bar(self):
         """메뉴바 생성"""
@@ -162,6 +179,28 @@ class MonitorWindow(QMainWindow):
         exit_action.setShortcut("Ctrl+Q")
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
+        
+        # 거래 메뉴
+        trade_menu = menubar.addMenu("거래")
+        
+        manual_trade_action = QAction("💰 수동 거래...", self)
+        manual_trade_action.triggered.connect(self.open_manual_trading)
+        trade_menu.addAction(manual_trade_action)
+        
+        # 🆕 차트 메뉴
+        chart_menu = menubar.addMenu("차트")
+        
+        naver_chart_action = QAction("📊 네이버 금융", self)
+        naver_chart_action.triggered.connect(lambda: self.open_external_chart("naver"))
+        chart_menu.addAction(naver_chart_action)
+        
+        yahoo_chart_action = QAction("📈 야후 파이낸스", self)
+        yahoo_chart_action.triggered.connect(lambda: self.open_external_chart("yahoo"))
+        chart_menu.addAction(yahoo_chart_action)
+        
+        tradingview_action = QAction("📉 TradingView", self)
+        tradingview_action.triggered.connect(lambda: self.open_external_chart("tradingview"))
+        chart_menu.addAction(tradingview_action)
         
         # 설정 메뉴
         if SETTINGS_AVAILABLE:
@@ -198,6 +237,53 @@ class MonitorWindow(QMainWindow):
                 self,
                 "오류",
                 f"설정 대화상자를 열 수 없습니다:\n{e}"
+            )
+    
+    def open_manual_trading(self):
+        """수동 거래 다이얼로그 열기"""
+        try:
+            from manual_trading_dialog import ManualTradingDialog
+            
+            dialog = ManualTradingDialog(self.trading_engine.kiwoom, parent=self)
+            dialog.exec_()
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "오류",
+                f"수동 거래 창을 열 수 없습니다:\n{e}"
+            )
+    
+    def open_external_chart(self, chart_type: str):
+        """
+        외부 차트 사이트 열기
+        
+        Args:
+            chart_type: 'naver', 'yahoo', 'tradingview'
+        """
+        import webbrowser
+        
+        urls = {
+            'naver': 'https://finance.naver.com/sise/',
+            'yahoo': 'https://finance.yahoo.com/',
+            'tradingview': 'https://www.tradingview.com/chart/'
+        }
+        
+        url = urls.get(chart_type, 'https://finance.naver.com')
+        
+        # 보유 종목이 있으면 첫 번째 종목으로 직접 이동
+        positions = self.trading_engine.risk_manager.positions
+        if positions and chart_type == 'naver':
+            first_stock_code = list(positions.keys())[0]
+            url = f'https://finance.naver.com/item/main.naver?code={first_stock_code}'
+        
+        try:
+            webbrowser.open(url)
+            self.add_log(f"외부 차트 열기: {chart_type.upper()}", "blue")
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "오류",
+                f"브라우저를 열 수 없습니다:\n{e}"
             )
     
     def show_about(self):
@@ -323,9 +409,9 @@ class MonitorWindow(QMainWindow):
         
         # 테이블 생성
         self.holdings_table = QTableWidget()
-        self.holdings_table.setColumnCount(6)
+        self.holdings_table.setColumnCount(10)
         self.holdings_table.setHorizontalHeaderLabels([
-            "종목코드", "종목명", "수량", "매수가", "현재가", "수익률"
+            "매도금지", "종목코드", "종목명", "수량", "평균가", "현재가", "수익률", "비중", "추가매수", "뉴스"
         ])
         self.holdings_table.horizontalHeader().setStretchLastSection(True)
         self.holdings_table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -432,7 +518,7 @@ class MonitorWindow(QMainWindow):
             state_colors = {
                 MarketState.OPEN: ("🟢 정규장", "green"),
                 MarketState.PRE_OPEN: ("🟡 장시작전", "orange"),
-                MarketState.AFTER_HOURS: ("🟠 시간외", "orange"),
+                MarketState.AFTER_HOURS: ("⚡ 시간외거래", "darkorange"),
                 MarketState.CLOSED: ("🔴 장마감", "red"),
                 MarketState.WEEKEND: ("🔵 주말", "blue"),
                 MarketState.HOLIDAY: ("🟣 공휴일", "purple"),
@@ -454,6 +540,16 @@ class MonitorWindow(QMainWindow):
             elif market_state == MarketState.PRE_OPEN:
                 minutes_until_open = self.market_scheduler.get_time_until_market_open()
                 state_text += f" ({minutes_until_open}분 후 개장)"
+            elif market_state == MarketState.AFTER_HOURS:
+                # 🆕 시간외 거래 시간 표시
+                from datetime import datetime
+                current_time = datetime.now().time()
+                after_hours_end = datetime.strptime(Config.MARKET_AFTER_HOURS_END, "%H:%M").time()
+                time_diff = datetime.combine(datetime.today(), after_hours_end) - datetime.combine(datetime.today(), current_time)
+                minutes_until_close = int(time_diff.total_seconds() / 60)
+                hours = minutes_until_close // 60
+                mins = minutes_until_close % 60
+                state_text += f" ({hours}시간 {mins}분 후 종료)"
             
             self.market_state_label.setText(f"시장: {state_text}")
             self.market_state_label.setStyleSheet(f"color: {color}; font-weight: bold;")
@@ -472,7 +568,7 @@ class MonitorWindow(QMainWindow):
             
             # 총 자산 (잔고 + 보유 종목 평가액)
             positions_value = sum(
-                p.quantity * getattr(p, 'current_price', p.buy_price)
+                p.quantity * p.current_price
                 for p in self.trading_engine.risk_manager.positions.values()
             )
             total_asset = balance + positions_value
@@ -509,27 +605,49 @@ class MonitorWindow(QMainWindow):
             
             self.holdings_table.setRowCount(len(positions))
             
+            # 총 자산 계산 (잔고 + 보유 종목 평가액)
+            balance = self.trading_engine.risk_manager.current_balance
+            positions_value = sum(
+                p.quantity * p.current_price
+                for p in positions.values()
+            )
+            total_asset = balance + positions_value
+            
             for row, (stock_code, position) in enumerate(positions.items()):
-                # 현재가 (price_history에서 가져오기)
-                current_price = position.buy_price
-                if stock_code in self.trading_engine.price_history:
-                    prices = self.trading_engine.price_history[stock_code]
-                    if prices:
-                        current_price = prices[-1]
-                        
-                        # 차트에 데이터 업데이트
-                        if self.chart_widget:
-                            self.chart_widget.update_price_data(stock_code, current_price)
+                # 현재가는 position.current_price 사용 (실시간 업데이트됨)
+                current_price = position.current_price
                 
-                # 수익률 계산
-                profit_rate = ((current_price - position.buy_price) / position.buy_price) * 100
+                # 차트에 데이터 업데이트
+                if self.chart_widget:
+                    self.chart_widget.update_price_data(stock_code, current_price)
                 
-                # 테이블 업데이트
-                self.holdings_table.setItem(row, 0, QTableWidgetItem(stock_code))
-                self.holdings_table.setItem(row, 1, QTableWidgetItem(position.stock_name))
-                self.holdings_table.setItem(row, 2, QTableWidgetItem(str(position.quantity)))
-                self.holdings_table.setItem(row, 3, QTableWidgetItem(f"{position.buy_price:,}"))
-                self.holdings_table.setItem(row, 4, QTableWidgetItem(f"{current_price:,}"))
+                # 수익률 계산 (평균가 기준)
+                profit_rate = ((current_price - position.avg_price) / position.avg_price) * 100
+                
+                # 종목 평가액
+                position_value = position.quantity * current_price
+                
+                # 총 자산 대비 비중 계산
+                weight_pct = (position_value / total_asset * 100) if total_asset > 0 else 0
+                
+                # 🆕 매도 금지 체크박스
+                checkbox = QCheckBox()
+                checkbox.setChecked(position.sell_blocked)
+                checkbox.stateChanged.connect(lambda state, code=stock_code: self.on_sell_block_changed(code, state))
+                # 체크박스를 중앙 정렬하기 위한 위젯
+                checkbox_widget = QWidget()
+                checkbox_layout = QHBoxLayout(checkbox_widget)
+                checkbox_layout.addWidget(checkbox)
+                checkbox_layout.setAlignment(Qt.AlignCenter)
+                checkbox_layout.setContentsMargins(0, 0, 0, 0)
+                self.holdings_table.setCellWidget(row, 0, checkbox_widget)
+                
+                # 테이블 업데이트 (인덱스 +1)
+                self.holdings_table.setItem(row, 1, QTableWidgetItem(stock_code))
+                self.holdings_table.setItem(row, 2, QTableWidgetItem(position.stock_name))
+                self.holdings_table.setItem(row, 3, QTableWidgetItem(str(position.quantity)))
+                self.holdings_table.setItem(row, 4, QTableWidgetItem(f"{position.avg_price:,}"))
+                self.holdings_table.setItem(row, 5, QTableWidgetItem(f"{current_price:,}"))
                 
                 # 수익률 아이템 (색상 적용)
                 profit_item = QTableWidgetItem(f"{profit_rate:+.2f}%")
@@ -537,7 +655,19 @@ class MonitorWindow(QMainWindow):
                     profit_item.setForeground(QColor(255, 0, 0))  # 빨간색
                 else:
                     profit_item.setForeground(QColor(0, 0, 255))  # 파란색
-                self.holdings_table.setItem(row, 5, profit_item)
+                self.holdings_table.setItem(row, 6, profit_item)
+                
+                # 비중 표시
+                weight_item = QTableWidgetItem(f"{weight_pct:.1f}%")
+                self.holdings_table.setItem(row, 7, weight_item)
+                
+                # 추가 매수 횟수
+                avg_down_text = f"{position.average_down_count}회" if position.average_down_count > 0 else "-"
+                self.holdings_table.setItem(row, 8, QTableWidgetItem(avg_down_text))
+                
+                # 🆕 뉴스 요약
+                news_summary = self.get_news_summary(stock_code)
+                self.holdings_table.setItem(row, 9, QTableWidgetItem(news_summary))
             
             # 전체 수익률 차트 업데이트
             if self.chart_widget and positions:
@@ -551,6 +681,43 @@ class MonitorWindow(QMainWindow):
                 
         except Exception as e:
             self.add_log(f"보유 종목 업데이트 오류: {e}", "red")
+    
+    def on_sell_block_changed(self, stock_code: str, state: int):
+        """매도 금지 체크박스 상태 변경 처리"""
+        try:
+            position = self.trading_engine.risk_manager.positions.get(stock_code)
+            if position:
+                position.sell_blocked = (state == Qt.Checked)
+                status = "활성화" if position.sell_blocked else "해제"
+                self.add_log(f"매도 금지 {status}: {position.stock_name}({stock_code})", "orange")
+        except Exception as e:
+            self.add_log(f"매도 금지 설정 오류: {e}", "red")
+    
+    def get_news_summary(self, stock_code: str) -> str:
+        """종목의 최신 뉴스 요약 가져오기"""
+        try:
+            # 뉴스 크롤러가 없거나 뉴스 분석이 비활성화된 경우
+            if not hasattr(self, 'news_crawler') or not self.news_crawler:
+                return "-"
+            
+            # 캐시된 뉴스 먼저 확인
+            news_list = self.news_crawler.get_cached_news(stock_code)
+            
+            # 캐시에 없으면 최신 뉴스 1개만 조회 (과부하 방지)
+            if not news_list:
+                news_list = self.news_crawler.get_latest_news(stock_code, max_count=1)
+            
+            # 뉴스가 있으면 제목 표시
+            if news_list:
+                latest = news_list[0]
+                title = latest.title[:30] + "..." if len(latest.title) > 30 else latest.title
+                return title
+            else:
+                return "-"
+                
+        except Exception as e:
+            # 에러 발생 시 조용히 처리 (GUI 업데이트 실패 방지)
+            return "-"
     
     def update_surge_status(self):
         """급등주 현황 업데이트"""

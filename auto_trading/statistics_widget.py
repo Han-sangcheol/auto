@@ -318,9 +318,9 @@ class StatisticsWidget(QWidget):
             holding_count = len(positions)
             self.holding_count_label.setText(f"현재 보유: {holding_count}종목")
             
-            # 보유 평가액
+            # 보유 평가액 (현재가 기준)
             holding_value = sum(
-                p.quantity * p.buy_price  # 현재가는 price_history에서 가져와야 함
+                p.quantity * p.current_price
                 for p in positions.values()
             )
             self.holding_value_label.setText(f"보유 평가액: {holding_value:,}원")

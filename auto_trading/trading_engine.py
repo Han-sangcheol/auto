@@ -109,26 +109,8 @@ class TradingEngine:
         # 가격 데이터 저장 (종목별)
         self.price_history: Dict[str, List[float]] = defaultdict(list)
         
-        # 데이터베이스 및 1분봉 집계기 (선택적)
-        self.database = None
-        self.candle_aggregator = None
-        if Config.DB_ENABLED:
-            try:
-                from database import StockDatabase
-                from candle_aggregator import CandleAggregator
-                
-                self.database = StockDatabase(Config.DB_PATH, Config.DB_PARQUET_DIR)
-                if self.database.enabled:
-                    self.candle_aggregator = CandleAggregator(self.database)
-                    log.success("💾 데이터베이스 및 1분봉 집계기 초기화 완료")
-                else:
-                    log.warning("데이터베이스가 비활성화되었습니다.")
-            except ImportError:
-                log.warning("데이터베이스 모듈을 로드할 수 없습니다. (duckdb 미설치)")
-            except Exception as e:
-                log.error(f"데이터베이스 초기화 오류: {e}")
-        else:
-            log.info("데이터베이스 기능이 비활성화되었습니다.")
+        # 🔄 데이터베이스 저장 기능 제거 - 외부 데이터 소스(yfinance) 사용
+        # 차트는 advanced_chart_widget.py에서 yfinance로 조회하여 표시
         
         # 실행 상태
         self.is_running = False
@@ -195,6 +177,16 @@ class TradingEngine:
         if self.monitor_window and hasattr(self.monitor_window, 'chart_widget'):
             try:
                 if self.monitor_window.chart_widget:
+                    # 🆕 매수 시 차트에 종목 자동 추가
+                    if trade_type.lower() == 'buy':
+                        position = self.risk_manager.positions.get(stock_code)
+                        if position:
+                            self.monitor_window.chart_widget.add_stock(
+                                stock_code,
+                                position.stock_name
+                            )
+                    
+                    # 매매 마커 추가
                     self.monitor_window.chart_widget.add_trade_marker(
                         stock_code, trade_type, price
                     )
@@ -251,13 +243,20 @@ class TradingEngine:
             # API 호출 간격 확보
             time.sleep(1)
             
-            # 3. 실시간 시세 등록 (관심 종목)
+            # 3. 실시간 시세 등록 (관심 종목 + 보유 종목)
             log.info("3️⃣ 실시간 시세 등록 중...")
             self.kiwoom.set_real_data_callback(self.on_price_update)
             # 🆕 호가 데이터 콜백 설정 (선제적 매수 판단)
             self.kiwoom.callbacks['order_book_data'] = self.on_order_book_update
             log.info("✅ 호가 데이터 콜백 설정 완료")
-            self.kiwoom.register_real_data(self.watch_list)
+            
+            # 🆕 관심 종목 + 보유 종목을 모두 실시간 등록
+            all_stocks = list(set(self.watch_list + [p.stock_code for p in self.risk_manager.positions.values()]))
+            if all_stocks:
+                log.info(f"   등록 종목: {len(all_stocks)}개 (관심: {len(self.watch_list)}개, 보유: {len(self.risk_manager.positions)}개)")
+                self.kiwoom.register_real_data(all_stocks)
+            else:
+                log.warning("   등록할 종목이 없습니다.")
             
             # API 안정화를 위한 추가 대기
             time.sleep(2)
@@ -458,53 +457,55 @@ class TradingEngine:
             if not self.is_running:
                 return
             
-            # 시장 상태 확인
-            market_state = self.market_scheduler.get_current_market_state()
-            
-            # 시장 상태별 동작
-            if market_state == MarketState.PRE_OPEN:
-                # 장 시작 전: 준비 상태 로그 (1분마다)
-                current_time = datetime.now()
-                if not hasattr(self, '_last_preopen_log_time'):
-                    self._last_preopen_log_time = current_time
+            # 🆕 개발 모드: 시장 상태 체크 건너뛰기
+            if not Config.DEVELOPMENT_MODE:
+                # 시장 상태 확인
+                market_state = self.market_scheduler.get_current_market_state()
                 
-                if (current_time - self._last_preopen_log_time).seconds >= 60:
-                    minutes_until_open = self.market_scheduler.get_time_until_market_open()
-                    log.info(f"⏰ 장 시작 전 대기 중... {minutes_until_open}분 후 개장")
-                    self._last_preopen_log_time = current_time
-                return
-            
-            elif market_state in [MarketState.CLOSED, MarketState.WEEKEND, MarketState.HOLIDAY]:
-                # 장외 시간: 자동 종료
-                if market_state == MarketState.CLOSED and datetime.now().time() >= dt_time(15, 30):
-                    log.info(f"장 마감 ({market_state.value}). 자동매매를 종료합니다.")
-                    self.stop_trading()
+                # 시장 상태별 동작
+                if market_state == MarketState.PRE_OPEN:
+                    # 장 시작 전: 준비 상태 로그 (1분마다)
+                    current_time = datetime.now()
+                    if not hasattr(self, '_last_preopen_log_time'):
+                        self._last_preopen_log_time = current_time
+                    
+                    if (current_time - self._last_preopen_log_time).seconds >= 60:
+                        minutes_until_open = self.market_scheduler.get_time_until_market_open()
+                        log.info(f"⏰ 장 시작 전 대기 중... {minutes_until_open}분 후 개장")
+                        self._last_preopen_log_time = current_time
                     return
-                # 대기 상태 로그 (5분마다)
-                current_time = datetime.now()
-                if not hasattr(self, '_last_closed_log_time'):
-                    self._last_closed_log_time = current_time
                 
-                if (current_time - self._last_closed_log_time).seconds >= 300:  # 5분
-                    minutes_until_open = self.market_scheduler.get_time_until_market_open()
-                    hours = minutes_until_open // 60
-                    mins = minutes_until_open % 60
-                    log.info(f"⏸️  장외 시간 ({market_state.value}). 장 시작까지: {hours}시간 {mins}분")
-                    self._last_closed_log_time = current_time
-                return
-            
-            elif market_state == MarketState.AFTER_HOURS:
-                # 시간외 매매
-                if not Config.ENABLE_AFTER_HOURS_TRADING:
-                    log.info("시간외 매매 시간입니다. 자동매매를 종료합니다.")
-                    self.stop_trading()
+                elif market_state in [MarketState.CLOSED, MarketState.WEEKEND, MarketState.HOLIDAY]:
+                    # 장외 시간: 자동 종료
+                    if market_state == MarketState.CLOSED and datetime.now().time() >= dt_time(15, 30):
+                        log.info(f"장 마감 ({market_state.value}). 자동매매를 종료합니다.")
+                        self.stop_trading()
+                        return
+                    # 대기 상태 로그 (5분마다)
+                    current_time = datetime.now()
+                    if not hasattr(self, '_last_closed_log_time'):
+                        self._last_closed_log_time = current_time
+                    
+                    if (current_time - self._last_closed_log_time).seconds >= 300:  # 5분
+                        minutes_until_open = self.market_scheduler.get_time_until_market_open()
+                        hours = minutes_until_open // 60
+                        mins = minutes_until_open % 60
+                        log.info(f"⏸️  장외 시간 ({market_state.value}). 장 시작까지: {hours}시간 {mins}분")
+                        self._last_closed_log_time = current_time
                     return
-                # 제한적 매매 (급등주 감지 비활성화 등)
-                log.info("⚡ 시간외 매매 중...")
-            
-            # 장 운영 시간 확인 (정규장 또는 시간외)
-            if not self.is_market_open():
-                return
+                
+                elif market_state == MarketState.AFTER_HOURS:
+                    # 시간외 매매
+                    if not Config.ENABLE_AFTER_HOURS_TRADING:
+                        log.info("시간외 매매 시간입니다. 자동매매를 종료합니다.")
+                        self.stop_trading()
+                        return
+                    # 제한적 매매 (급등주 감지 비활성화 등)
+                    log.info("⚡ 시간외 매매 중...")
+                
+                # 장 운영 시간 확인 (정규장 또는 시간외)
+                if not self.is_market_open():
+                    return
             
             # 하트비트 (1분마다) - 프로그램 정상 실행 확인
             current_time = datetime.now()
@@ -523,6 +524,9 @@ class TradingEngine:
                 self._print_status_summary()
                 self._last_status_time = current_time
             
+            # 🆕 보유 종목 현재가 업데이트 (실시간 데이터 수신 안될 경우 대비)
+            self._update_all_positions_price()
+            
             # 손절매/익절매 확인 (최우선)
             self.check_exit_conditions()
             
@@ -535,6 +539,63 @@ class TradingEngine:
         except Exception as e:
             log.error(f"주기적 체크 중 오류 발생: {e}")
             # 오류가 발생해도 타이머는 계속 실행
+    
+    def _update_all_positions_price(self):
+        """
+        🆕 모든 보유 종목의 현재가 업데이트
+        
+        실시간 데이터 수신이 제대로 안될 경우를 대비하여
+        주기적으로 모든 보유 종목의 현재가를 API로 직접 조회합니다.
+        """
+        try:
+            positions = self.risk_manager.positions
+            if not positions:
+                return
+            
+            # 마지막 업데이트 시간 체크 (1분에 한 번만)
+            current_time = time.time()
+            if not hasattr(self, '_last_price_update_time'):
+                self._last_price_update_time = 0
+            
+            if current_time - self._last_price_update_time < 60:  # 1분
+                return
+            
+            self._last_price_update_time = current_time
+            
+            log.info(f"🔄 보유 종목 현재가 일괄 업데이트 중... ({len(positions)}개 종목)")
+            
+            for stock_code, position in positions.items():
+                try:
+                    # 현재가 조회
+                    current_price = self.kiwoom.get_current_price(stock_code)
+                    
+                    if current_price:
+                        # 기존 가격과 다르면 업데이트
+                        if current_price != position.current_price:
+                            old_price = position.current_price
+                            position.update_price(current_price)
+                            
+                            profit_rate = ((current_price - position.avg_price) / position.avg_price) * 100
+                            log.info(
+                                f"   📊 {stock_code} {position.stock_name}: "
+                                f"{old_price:,}원 → {current_price:,}원 "
+                                f"(수익률: {profit_rate:+.2f}%)"
+                            )
+                        else:
+                            log.debug(f"   ✓ {stock_code}: 가격 변동 없음 ({current_price:,}원)")
+                    else:
+                        log.warning(f"   ⚠️  {stock_code}: 현재가 조회 실패")
+                    
+                    # API 호출 간격 (0.5초)
+                    time.sleep(0.5)
+                    
+                except Exception as e:
+                    log.error(f"   ❌ {stock_code} 현재가 조회 중 오류: {e}")
+            
+            log.success(f"✅ 보유 종목 현재가 업데이트 완료 ({len(positions)}개)")
+            
+        except Exception as e:
+            log.error(f"보유 종목 현재가 업데이트 중 오류: {e}")
     
     def _print_status_summary(self):
         """상태 요약 출력"""
@@ -616,12 +677,7 @@ class TradingEngine:
             self.health_monitor.print_health_summary()
         
         # 1분봉 집계기 중지 및 데이터 저장
-        if self.candle_aggregator:
-            self.candle_aggregator.stop()
-        
-        # 데이터베이스 연결 종료
-        if self.database:
-            self.database.close()
+        # 🔄 데이터베이스 저장 기능 제거됨
         
         # 스케줄러 중지
         if self.scheduler:
@@ -756,6 +812,9 @@ class TradingEngine:
             signal = signal_result['signal']
             
             if signal == SignalType.HOLD:
+                # 디버깅: 왜 HOLD인지 주기적으로 로그 출력 (30개마다)
+                if len(prices) % 30 == 0:
+                    log.debug(f"[{stock_code}] HOLD 신호 - 강도: {signal_result['strength']:.2f}, 이유: {signal_result.get('reason', 'N/A')}")
                 return
             
             self.signal_count += 1
@@ -773,6 +832,13 @@ class TradingEngine:
             
             # 매도 신호
             elif signal == SignalType.SELL:
+                # 🆕 매도 금지 확인 (일반 매도 신호만 차단, 손절/익절 제외)
+                if stock_code in self.risk_manager.positions:
+                    position = self.risk_manager.positions[stock_code]
+                    if position.sell_blocked:
+                        log.info(f"🚫 매도 금지 설정: {stock_code} - 자동 매도 차단 (사용자 설정)")
+                        return
+                
                 log.warning("=" * 70)
                 log.warning(f"🔔 매도 신호 발생! {stock_code}")
                 log.warning(f"   현재가: {current_price:,}원")
@@ -828,7 +894,10 @@ class TradingEngine:
             log.info(f"🔍 [execute_buy] 리스크 검증 중...")
             is_valid, reason = self.risk_manager.validate_new_position(stock_code)
             if not is_valid:
-                log.warning(f"매수 불가: {stock_code} - {reason}")
+                log.warning(f"❌ 매수 불가: {stock_code}")
+                log.warning(f"   사유: {reason}")
+                log.warning(f"   현재 보유: {len(self.risk_manager.positions)}/{Config.MAX_STOCKS}")
+                log.warning(f"   현재 잔고: {self.risk_manager.current_balance:,}원")
                 return
             log.info(f"✅ [execute_buy] 리스크 검증 통과")
             
@@ -856,13 +925,23 @@ class TradingEngine:
             
             if order_result:
                 # 포지션 추가
-                stock_name = stock_code  # 실제로는 종목명 조회 필요
+                stock_name = self.kiwoom.get_stock_name(stock_code)  # 🆕 종목명 조회
                 position = self.risk_manager.add_position(
                     stock_code,
                     stock_name,
                     quantity,
                     current_price
                 )
+                
+                # 🆕 뉴스 점수 설정 (급등주 매수의 경우)
+                if position and 'news_score' in signal_result:
+                    position.news_score = signal_result['news_score']
+                    if position.news_score != 0:
+                        adjusted_stop_loss = position.get_adjusted_stop_loss_percent()
+                        log.info(
+                            f"   📰 뉴스 점수: {position.news_score:+d}/100 "
+                            f"→ 손절 기준: {Config.STOP_LOSS_PERCENT}% → {adjusted_stop_loss:.1f}%"
+                        )
                 
                 if position:
                     total_cost = current_price * quantity
@@ -893,6 +972,13 @@ class TradingEngine:
                             quantity,
                             current_price
                         )
+                    
+                    # 🆕 실시간 시세 등록 (새로 매수한 종목)
+                    try:
+                        log.info(f"📡 실시간 시세 등록: {stock_code}")
+                        self.kiwoom.register_real_data([stock_code])
+                    except Exception as e:
+                        log.warning(f"실시간 시세 등록 실패 ({stock_code}): {e}")
             else:
                 log.error("=" * 70)
                 log.error(f"❌ 매수 주문 실패: {stock_code}")
@@ -933,6 +1019,11 @@ class TradingEngine:
             
             position = self.risk_manager.positions[stock_code]
             
+            # 🆕 매도 금지 확인 (일반 매도만 차단)
+            if position.sell_blocked:
+                log.info(f"🚫 매도 금지: {stock_code} - 사용자 설정으로 매도 차단")
+                return
+            
             # 주문 전송
             log.info(
                 f"📉 매도 시도: {stock_code} {position.quantity}주 @ {current_price:,}원 | "
@@ -955,12 +1046,12 @@ class TradingEngine:
                 
                 if profit_loss is not None:
                     total_amount = current_price * position.quantity
-                    profit_rate = (profit_loss / (position.buy_price * position.quantity)) * 100
+                    profit_rate = (profit_loss / (position.entry_price * position.quantity)) * 100
                     log.success("=" * 70)
                     log.success(f"✅ 매도 체결 완료!")
                     log.success(f"   종목: {stock_code}")
                     log.success(f"   수량: {position.quantity}주")
-                    log.success(f"   매수가: {position.buy_price:,}원")
+                    log.success(f"   매수가: {position.entry_price:,}원")
                     log.success(f"   매도가: {current_price:,}원")
                     log.success(f"   총 금액: {total_amount:,}원")
                     log.success(f"   손익: {profit_loss:+,}원 ({profit_rate:+.2f}%)")
@@ -990,17 +1081,78 @@ class TradingEngine:
     
     def check_exit_conditions(self):
         """
-        손절매/익절매 조건 확인 (단타 매매에 중요)
+        손절매/익절매 조건 확인 (+ 추가 매수 체크)
         """
         try:
             for stock_code, position in list(self.risk_manager.positions.items()):
+                # 추가 매수 확인 (손절매보다 먼저 체크)
+                if self.risk_manager.check_average_down(position):
+                    log.warning(f"🔄 추가 매수 시도: {stock_code}")
+                    
+                    # 추가 매수 수량 계산
+                    initial_quantity = int(position.total_invested / position.entry_price)
+                    add_quantity = int(initial_quantity * Config.AVERAGE_DOWN_SIZE_RATIO)
+                    if add_quantity < 1:
+                        add_quantity = 1
+                    
+                    # 내부 처리 (잔고 차감, 평균가 계산)
+                    success = self.risk_manager.execute_average_down(stock_code, position.current_price)
+                    
+                    if success:
+                        # 키움 API로 실제 주문 (추가 매수는 우선순위 보통)
+                        result = self.kiwoom.buy_order(
+                            stock_code, 
+                            add_quantity, 
+                            0,  # 시장가
+                            priority="익절"  # 추가 매수도 중요 주문으로 처리
+                        )
+                        
+                        if result:
+                            log.success("=" * 70)
+                            log.success(f"✅ 추가 매수 주문 성공!")
+                            log.success(f"   종목: {stock_code}")
+                            log.success(f"   수량: {add_quantity}주")
+                            log.success(f"   가격: 시장가")
+                            log.success(f"   신규 평균가: {position.avg_price:,}원")
+                            log.success(f"   신규 총 수량: {position.quantity}주")
+                            log.success(f"   추가 매수 횟수: {position.average_down_count}/{Config.MAX_AVERAGE_DOWN_COUNT}")
+                            log.success("=" * 70)
+                            
+                            # GUI 로그 추가
+                            self._add_gui_log(
+                                f"🔄 추가매수: {stock_code} {add_quantity}주 (평균가: {position.avg_price:,}원)",
+                                "orange"
+                            )
+                        else:
+                            log.error(f"❌ 추가 매수 주문 실패: {stock_code}")
+                            # 실패 시 내부 처리 롤백
+                            position.average_down_count -= 1
+                            if position.average_down_prices:
+                                position.average_down_prices.pop()
+                            # 원래 상태로 복구 (간단히 재계산)
+                            position.total_invested = position.entry_price * (position.quantity - add_quantity)
+                            position.quantity -= add_quantity
+                            if position.quantity > 0:
+                                position.avg_price = int(position.total_invested / position.quantity)
+                            position.update_stop_profit_prices()
+                            self.risk_manager.current_balance += position.current_price * add_quantity
+                    else:
+                        log.warning(f"⚠️  추가 매수 조건 미충족: {stock_code}")
+                    
+                    continue  # 추가 매수 후 손절 체크는 건너뜀 (이번 루프에서)
+                
+                # 🆕 매도 금지 확인 (손절/익절 포함)
+                if position.sell_blocked:
+                    log.debug(f"🚫 매도 금지 설정: {stock_code} - 손절/익절 실행 안함")
+                    continue
+                
                 # 손절매 확인
                 if self.risk_manager.check_stop_loss(position):
-                    loss_rate = ((position.current_price - position.buy_price) / position.buy_price) * 100
+                    loss_rate = ((position.current_price - position.entry_price) / position.entry_price) * 100
                     log.warning("=" * 70)
                     log.warning(f"🚨 손절매 조건 감지!")
                     log.warning(f"   종목: {stock_code}")
-                    log.warning(f"   매수가: {position.buy_price:,}원")
+                    log.warning(f"   매수가: {position.entry_price:,}원")
                     log.warning(f"   현재가: {position.current_price:,}원")
                     log.warning(f"   손실률: {loss_rate:.2f}%")
                     log.warning(f"   시각: {datetime.now().strftime('%H:%M:%S')}")
@@ -1013,11 +1165,11 @@ class TradingEngine:
                 
                 # 익절매 확인
                 elif self.risk_manager.check_take_profit(position):
-                    profit_rate = ((position.current_price - position.buy_price) / position.buy_price) * 100
+                    profit_rate = ((position.current_price - position.entry_price) / position.entry_price) * 100
                     log.warning("=" * 70)
                     log.warning(f"🎯 익절매 조건 감지!")
                     log.warning(f"   종목: {stock_code}")
-                    log.warning(f"   매수가: {position.buy_price:,}원")
+                    log.warning(f"   매수가: {position.entry_price:,}원")
                     log.warning(f"   현재가: {position.current_price:,}원")
                     log.warning(f"   수익률: {profit_rate:.2f}%")
                     log.warning(f"   시각: {datetime.now().strftime('%H:%M:%S')}")
@@ -1046,11 +1198,15 @@ class TradingEngine:
             
             position = self.risk_manager.positions[stock_code]
             
+            # 주문 우선순위 설정 (손절/익절은 우선순위 높음)
+            priority = "손절" if reason == "손절매" else "익절" if reason == "익절매" else "일반"
+            
             # 주문 전송
             order_result = self.kiwoom.sell_order(
                 stock_code,
                 position.quantity,
-                0  # 시장가 주문
+                0,  # 시장가 주문
+                priority=priority  # 우선순위 전달
             )
             
             if order_result:
@@ -1063,13 +1219,13 @@ class TradingEngine:
                 
                 if profit_loss is not None:
                     total_amount = sell_price * position.quantity
-                    profit_rate = (profit_loss / (position.buy_price * position.quantity)) * 100
+                    profit_rate = (profit_loss / (position.entry_price * position.quantity)) * 100
                     emoji = "✅" if profit_loss >= 0 else "❌"
                     log.success("=" * 70)
                     log.success(f"{emoji} 청산 체결 완료! ({reason})")
                     log.success(f"   종목: {stock_code}")
                     log.success(f"   수량: {position.quantity}주")
-                    log.success(f"   매수가: {position.buy_price:,}원")
+                    log.success(f"   매수가: {position.entry_price:,}원")
                     log.success(f"   매도가: {sell_price:,}원")
                     log.success(f"   총 금액: {total_amount:,}원")
                     log.success(f"   손익: {profit_loss:+,}원 ({profit_rate:+.2f}%)")
@@ -1086,7 +1242,7 @@ class TradingEngine:
                             self.notifier.notify_stop_loss(
                                 position.stock_name,
                                 position.quantity,
-                                position.buy_price,
+                                position.entry_price,
                                 sell_price,
                                 abs(profit_loss)
                             )
@@ -1094,7 +1250,7 @@ class TradingEngine:
                             self.notifier.notify_take_profit(
                                 position.stock_name,
                                 position.quantity,
-                                position.buy_price,
+                                position.entry_price,
                                 sell_price,
                                 profit_loss
                             )
@@ -1236,7 +1392,8 @@ class TradingEngine:
                     signal_result = {
                         'signal': 'BUY',
                         'strength': 3.0,  # 급등주는 강한 신호
-                        'reason': f"급등주 감지 (상승률 {candidate.current_change_rate:+.2f}%, 거래량 {candidate.get_volume_ratio():.2f}배)"
+                        'reason': f"급등주 감지 (상승률 {candidate.current_change_rate:+.2f}%, 거래량 {candidate.get_volume_ratio():.2f}배)",
+                        'news_score': candidate.news_score  # 🆕 뉴스 점수 전달
                     }
                     
                     log.info(f"🔄 execute_buy 함수 호출 준비 완료")

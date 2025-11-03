@@ -37,6 +37,13 @@ psutil>=5.9.0
 # 실시간 차트 (GUI)
 pyqtgraph>=0.13.3
 
+# 고급 차트 및 외부 데이터 조회
+plotly>=5.18.0
+yfinance>=0.2.32
+PyQtWebEngine>=5.15.0
+pandas>=2.0.0
+pandas-ta>=0.3.14b0
+
 # 시계열 데이터베이스
 # duckdb>=0.9.0  # 32비트 Python 미지원
 # pyarrow>=14.0.0  # 32비트 Python 미지원
