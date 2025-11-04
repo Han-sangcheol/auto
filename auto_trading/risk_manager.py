@@ -69,6 +69,9 @@ class Position:
         # 🆕 매도 제어
         self.sell_blocked = False  # True: 자동 매도 금지 (손절/익절 제외)
         
+        # 🆕 블랙박스 DB 연동
+        self.db_position_id: Optional[int] = None  # 거래 이력 DB의 포지션 ID
+        
         # 손절/익절가는 평균가 기준으로 계산
         self.update_stop_profit_prices()
     
@@ -223,6 +226,36 @@ class RiskManager:
         self.total_fees_paid = 0  # 총 지불한 수수료
         
         log.info("리스크 관리자 초기화 완료")
+    
+    def reload_settings(self):
+        """
+        🆕 설정 재로드 (Config 변경 시 호출)
+        """
+        log.info("🔄 RiskManager 설정 재로드 중...")
+        
+        # 최대 보유 종목 수 업데이트
+        old_max_stocks = self.max_stocks
+        self.max_stocks = Config.MAX_STOCKS
+        if old_max_stocks != self.max_stocks:
+            log.info(f"   최대 보유 종목 수: {old_max_stocks} → {self.max_stocks}")
+        
+        # 수수료 계산기 재초기화
+        self.fee_calculator = FeeCalculator(use_simulation=Config.USE_SIMULATION)
+        
+        # 기존 포지션의 손절/익절가 재계산
+        for stock_code, position in self.positions.items():
+            old_stop_loss = position.stop_loss_price
+            old_take_profit = position.take_profit_price
+            
+            position.update_stop_profit_prices()
+            
+            log.info(
+                f"   {position.stock_name}({stock_code}): "
+                f"손절 {old_stop_loss:,}원 → {position.stop_loss_price:,}원, "
+                f"익절 {old_take_profit:,}원 → {position.take_profit_price:,}원"
+            )
+        
+        log.success("✅ RiskManager 설정 재로드 완료")
     
     def set_initial_balance(self, balance: int):
         """초기 잔고 설정"""
@@ -398,19 +431,48 @@ class RiskManager:
         
         return False
     
-    def validate_new_position(self, stock_code: str) -> tuple[bool, str]:
+    def validate_new_position(self, stock_code: str, allow_average_down: bool = True) -> tuple[bool, str]:
         """
-        새 포지션 진입 가능 여부 검증
+        새 포지션 진입 가능 여부 검증 (물타기 지원)
         
         Args:
             stock_code: 종목 코드
+            allow_average_down: 물타기 허용 여부
         
         Returns:
             (가능 여부, 사유)
         """
-        # 이미 보유 중인 종목
+        from config import Config
+        
+        # 🆕 이미 보유 중인 종목 - 물타기 조건 체크
         if stock_code in self.positions:
-            return False, f"{stock_code}를 이미 보유 중입니다."
+            position = self.positions[stock_code]
+            
+            # 물타기 비활성화 시
+            if not Config.ENABLE_AVERAGE_DOWN or not allow_average_down:
+                return False, f"{stock_code}를 이미 보유 중입니다."
+            
+            # 물타기 횟수 초과
+            if position.average_down_count >= Config.MAX_AVERAGE_DOWN_COUNT:
+                return False, f"{stock_code} 물타기 횟수 초과 ({position.average_down_count}/{Config.MAX_AVERAGE_DOWN_COUNT}회)"
+            
+            # 손실률 체크 (물타기 트리거)
+            profit_rate = position.get_profit_rate(position.current_price)
+            
+            if profit_rate >= 0:
+                return False, f"{stock_code}는 현재 수익 중입니다 (+{profit_rate:.2f}%). 물타기는 손실 시에만 가능합니다."
+            
+            # 손실률이 물타기 트리거보다 작으면 (예: -1% < -2.5%)
+            if abs(profit_rate) < Config.AVERAGE_DOWN_TRIGGER_PERCENT:
+                return False, f"{stock_code} 물타기 조건 미달 (현재: {profit_rate:.2f}%, 트리거: -{Config.AVERAGE_DOWN_TRIGGER_PERCENT}%)"
+            
+            # 물타기 가능!
+            log.info(
+                f"✅ 물타기 조건 충족: {stock_code} "
+                f"손실률 {profit_rate:.2f}% (트리거: -{Config.AVERAGE_DOWN_TRIGGER_PERCENT}%) | "
+                f"물타기 {position.average_down_count + 1}/{Config.MAX_AVERAGE_DOWN_COUNT}회차"
+            )
+            return True, f"물타기 가능 (손실률: {profit_rate:.2f}%)"
         
         # 최대 보유 종목 수 초과
         if len(self.positions) >= self.max_stocks:

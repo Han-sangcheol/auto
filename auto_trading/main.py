@@ -344,6 +344,37 @@ def main():
         # 종료 처리
         log.info("자동매매를 종료합니다...")
         engine.stop_trading()
+        
+        # 🆕 뉴스 크롤링 패턴 저장
+        try:
+            if hasattr(engine, 'surge_detector') and engine.surge_detector:
+                if hasattr(engine.surge_detector, 'news_crawler'):
+                    news_crawler = engine.surge_detector.news_crawler
+                    if news_crawler and hasattr(news_crawler, 'pattern_learner'):
+                        news_crawler.pattern_learner.save_patterns()
+                        log.success("✅ 뉴스 크롤링 패턴 저장 완료")
+        except Exception as pattern_error:
+            log.warning(f"⚠️  뉴스 크롤링 패턴 저장 실패: {pattern_error}")
+        
+        # 📦 거래 이력 데이터베이스 백업
+        try:
+            backup_dir = os.path.join(Config.LOG_DIR, "history_backups")
+            os.makedirs(backup_dir, exist_ok=True)
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = os.path.join(backup_dir, f"trading_history_{timestamp}.db")
+            
+            engine.history_db.backup_database(backup_path)
+            log.success(f"✅ 거래 이력 백업 완료: {backup_path}")
+        except Exception as backup_error:
+            log.error(f"❌ 거래 이력 백업 실패: {backup_error}")
+        
+        # 데이터베이스 연결 종료
+        try:
+            engine.history_db.close()
+        except:
+            pass
+        
         kiwoom.disconnect()
         
         # 최종 통계
@@ -357,6 +388,30 @@ def main():
         try:
             if 'engine' in locals():
                 engine.stop_trading()
+                
+                # 🆕 뉴스 크롤링 패턴 저장
+                try:
+                    if hasattr(engine, 'surge_detector') and engine.surge_detector:
+                        if hasattr(engine.surge_detector, 'news_crawler'):
+                            news_crawler = engine.surge_detector.news_crawler
+                            if news_crawler and hasattr(news_crawler, 'pattern_learner'):
+                                news_crawler.pattern_learner.save_patterns()
+                                log.success("✅ 뉴스 크롤링 패턴 저장 완료")
+                except:
+                    pass
+                
+                # 📦 거래 이력 백업
+                try:
+                    backup_dir = os.path.join(Config.LOG_DIR, "history_backups")
+                    os.makedirs(backup_dir, exist_ok=True)
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    backup_path = os.path.join(backup_dir, f"trading_history_{timestamp}.db")
+                    engine.history_db.backup_database(backup_path)
+                    engine.history_db.close()
+                    log.success(f"✅ 거래 이력 백업 완료: {backup_path}")
+                except:
+                    pass
+                
             if 'kiwoom' in locals():
                 kiwoom.disconnect()
         except:
@@ -370,6 +425,30 @@ def main():
         try:
             if 'engine' in locals():
                 engine.stop_trading()
+                
+                # 🆕 뉴스 크롤링 패턴 저장
+                try:
+                    if hasattr(engine, 'surge_detector') and engine.surge_detector:
+                        if hasattr(engine.surge_detector, 'news_crawler'):
+                            news_crawler = engine.surge_detector.news_crawler
+                            if news_crawler and hasattr(news_crawler, 'pattern_learner'):
+                                news_crawler.pattern_learner.save_patterns()
+                                log.success("✅ 뉴스 크롤링 패턴 저장 완료")
+                except:
+                    pass
+                
+                # 📦 거래 이력 백업
+                try:
+                    backup_dir = os.path.join(Config.LOG_DIR, "history_backups")
+                    os.makedirs(backup_dir, exist_ok=True)
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    backup_path = os.path.join(backup_dir, f"trading_history_{timestamp}.db")
+                    engine.history_db.backup_database(backup_path)
+                    engine.history_db.close()
+                    log.success(f"✅ 거래 이력 백업 완료: {backup_path}")
+                except:
+                    pass
+                
             if 'kiwoom' in locals():
                 kiwoom.disconnect()
         except:

@@ -469,13 +469,30 @@ class SettingsDialog(QDialog):
             with open(env_path, 'w', encoding='utf-8') as f:
                 f.writelines(updated_lines)
             
-            # 성공 메시지
-            QMessageBox.information(
-                self,
-                "저장 완료",
-                "설정이 .env 파일에 저장되었습니다.\n\n"
-                "⚠️ 주의: 설정을 적용하려면 프로그램을 재시작해야 합니다."
-            )
+            # 🆕 Config 재로드 (즉시 적용)
+            try:
+                from config import Config
+                from logger import log
+                
+                log.info("🔄 설정 재로드 중...")
+                Config.reload_from_env()
+                log.success("✅ 설정 즉시 적용 완료!")
+                
+                # 성공 메시지
+                QMessageBox.information(
+                    self,
+                    "저장 완료",
+                    "✅ 설정이 저장되고 즉시 적용되었습니다!\n\n"
+                    "프로그램 재시작 없이 바로 사용 가능합니다."
+                )
+            except Exception as reload_error:
+                log.error(f"설정 재로드 오류: {reload_error}")
+                QMessageBox.warning(
+                    self,
+                    "일부 적용 실패",
+                    f"설정은 저장되었으나 일부 적용에 실패했습니다:\n{reload_error}\n\n"
+                    f"프로그램을 재시작하면 모든 설정이 적용됩니다."
+                )
             
             self.accept()
             

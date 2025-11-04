@@ -31,7 +31,10 @@ load_dotenv(dotenv_path=env_path)
 
 
 class Config:
-    """프로그램 설정 클래스"""
+    """프로그램 설정 클래스 (동적 재로드 지원)"""
+    
+    # 🆕 설정 변경 콜백 리스트
+    _reload_callbacks = []
     
     # 키움증권 계좌 정보
     KIWOOM_ACCOUNT_NUMBER = os.getenv('KIWOOM_ACCOUNT_NUMBER', '')
@@ -94,10 +97,10 @@ class Config:
     SURGE_MIN_BUYING_PRESSURE = float(os.getenv('SURGE_MIN_BUYING_PRESSURE', '0.0'))  # 60→0 (호가 조건 비활성화)
     SURGE_COOLDOWN_MINUTES = int(os.getenv('SURGE_COOLDOWN_MINUTES', '30'))
     
-    # 뉴스 분석 설정 (선택적 기능)
+    # 뉴스 분석 설정 (🆕 기본 비활성화 - 성능 최적화)
     ENABLE_NEWS_ANALYSIS = os.getenv('ENABLE_NEWS_ANALYSIS', 'False').lower() == 'true'
     NEWS_UPDATE_INTERVAL = int(os.getenv('NEWS_UPDATE_INTERVAL', '300'))  # 5분
-    NEWS_MIN_COUNT = int(os.getenv('NEWS_MIN_COUNT', '3'))  # 최소 뉴스 개수
+    NEWS_MIN_COUNT = int(os.getenv('NEWS_MIN_COUNT', '1'))  # 최소 뉴스 개수 (1개 이상이면 분석)
     NEWS_BUY_THRESHOLD = int(os.getenv('NEWS_BUY_THRESHOLD', '30'))  # 매수 임계값
     NEWS_SELL_THRESHOLD = int(os.getenv('NEWS_SELL_THRESHOLD', '-30'))  # 매도 임계값
     
@@ -135,6 +138,7 @@ class Config:
     # 로깅 설정
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
     LOG_FILE_PATH = os.getenv('LOG_FILE_PATH', 'logs/trading.log')
+    LOG_DIR = os.getenv('LOG_DIR', 'logs')  # 로그 및 데이터베이스 저장 디렉토리
     
     # 데이터베이스 설정 (SQLite: 32/64비트 모두 지원)
     # ⚡ 기본값 False: 실시간 성능 우선 (필요 시 .env에서 활성화)
@@ -190,6 +194,140 @@ class Config:
                 errors.append("AVERAGE_DOWN_SIZE_RATIO는 0보다 크고 5 이하여야 합니다.")
         
         return errors
+    
+    @classmethod
+    def register_reload_callback(cls, callback):
+        """
+        🆕 설정 재로드 콜백 등록
+        
+        Args:
+            callback: 설정 변경 시 호출할 함수
+        """
+        if callback not in cls._reload_callbacks:
+            cls._reload_callbacks.append(callback)
+    
+    @classmethod
+    def reload_from_env(cls):
+        """
+        🆕 환경변수에서 설정 다시 로드
+        """
+        from dotenv import load_dotenv
+        from pathlib import Path
+        
+        # .env 파일 다시 로드
+        env_path = Path(__file__).parent / '.env'
+        load_dotenv(dotenv_path=env_path, override=True)  # override=True로 기존 값 덮어쓰기
+        
+        # 모든 설정 값 다시 로드
+        cls.KIWOOM_ACCOUNT_NUMBER = os.getenv('KIWOOM_ACCOUNT_NUMBER', '')
+        cls.KIWOOM_ACCOUNT_PASSWORD = os.getenv('KIWOOM_ACCOUNT_PASSWORD', '')
+        
+        # 거래 설정
+        cls.USE_SIMULATION = os.getenv('USE_SIMULATION', 'True').lower() == 'true'
+        cls.MAX_STOCKS = int(os.getenv('MAX_STOCKS', '3'))
+        cls.AUTO_TRADING_RATIO = float(os.getenv('AUTO_TRADING_RATIO', '80'))
+        cls.POSITION_SIZE_PERCENT = float(os.getenv('POSITION_SIZE_PERCENT', '10'))
+        cls.STOP_LOSS_PERCENT = float(os.getenv('STOP_LOSS_PERCENT', '5'))
+        cls.TAKE_PROFIT_PERCENT = float(os.getenv('TAKE_PROFIT_PERCENT', '10'))
+        cls.DAILY_LOSS_LIMIT_PERCENT = float(os.getenv('DAILY_LOSS_LIMIT_PERCENT', '3'))
+        
+        # 시장 시간 설정
+        cls.ENABLE_AFTER_HOURS_TRADING = os.getenv('ENABLE_AFTER_HOURS_TRADING', 'False').lower() == 'true'
+        cls.DEVELOPMENT_MODE = os.getenv('DEVELOPMENT_MODE', 'False').lower() == 'true'
+        
+        # 물타기 설정
+        cls.ENABLE_AVERAGE_DOWN = os.getenv('ENABLE_AVERAGE_DOWN', 'False').lower() == 'true'
+        cls.AVERAGE_DOWN_TRIGGER_PERCENT = float(os.getenv('AVERAGE_DOWN_TRIGGER_PERCENT', '2.5'))
+        cls.MAX_AVERAGE_DOWN_COUNT = int(os.getenv('MAX_AVERAGE_DOWN_COUNT', '2'))
+        cls.AVERAGE_DOWN_SIZE_RATIO = float(os.getenv('AVERAGE_DOWN_SIZE_RATIO', '1.0'))
+        
+        # 관심 종목
+        cls.WATCH_LIST_STR = os.getenv('WATCH_LIST', '005930,000660,035720')
+        cls.WATCH_LIST = [code.strip() for code in cls.WATCH_LIST_STR.split(',') if code.strip()]
+        
+        # 전략 설정
+        cls.MA_SHORT_PERIOD = int(os.getenv('MA_SHORT_PERIOD', '5'))
+        cls.MA_LONG_PERIOD = int(os.getenv('MA_LONG_PERIOD', '20'))
+        cls.RSI_PERIOD = int(os.getenv('RSI_PERIOD', '14'))
+        cls.RSI_OVERSOLD = float(os.getenv('RSI_OVERSOLD', '30'))
+        cls.RSI_OVERBOUGHT = float(os.getenv('RSI_OVERBOUGHT', '70'))
+        cls.MACD_FAST = int(os.getenv('MACD_FAST', '12'))
+        cls.MACD_SLOW = int(os.getenv('MACD_SLOW', '26'))
+        cls.MACD_SIGNAL = int(os.getenv('MACD_SIGNAL', '9'))
+        cls.MIN_SIGNAL_STRENGTH = int(os.getenv('MIN_SIGNAL_STRENGTH', '2'))
+        
+        # 급등주 설정
+        cls.ENABLE_SURGE_DETECTION = os.getenv('ENABLE_SURGE_DETECTION', 'True').lower() == 'true'
+        cls.SURGE_AUTO_APPROVE = os.getenv('SURGE_AUTO_APPROVE', 'True').lower() == 'true'
+        cls.SURGE_CANDIDATE_COUNT = int(os.getenv('SURGE_CANDIDATE_COUNT', '30'))
+        cls.SURGE_USE_CONTINUOUS = os.getenv('SURGE_USE_CONTINUOUS', 'True').lower() == 'true'
+        cls.SURGE_MAX_CONTINUOUS = int(os.getenv('SURGE_MAX_CONTINUOUS', '3'))
+        cls.SURGE_MIN_CHANGE_RATE = float(os.getenv('SURGE_MIN_CHANGE_RATE', '5.0'))
+        cls.SURGE_MONITORING_CHANGE_RATE = float(os.getenv('SURGE_MONITORING_CHANGE_RATE', '5.0'))
+        cls.SURGE_MIN_VOLUME_RATIO = float(os.getenv('SURGE_MIN_VOLUME_RATIO', '2.0'))
+        cls.SURGE_MIN_BUYING_PRESSURE = float(os.getenv('SURGE_MIN_BUYING_PRESSURE', '0.0'))
+        cls.SURGE_COOLDOWN_MINUTES = int(os.getenv('SURGE_COOLDOWN_MINUTES', '30'))
+        
+        # 뉴스 설정
+        cls.ENABLE_NEWS_ANALYSIS = os.getenv('ENABLE_NEWS_ANALYSIS', 'False').lower() == 'true'
+        cls.NEWS_UPDATE_INTERVAL = int(os.getenv('NEWS_UPDATE_INTERVAL', '300'))
+        cls.NEWS_MIN_COUNT = int(os.getenv('NEWS_MIN_COUNT', '1'))
+        cls.NEWS_BUY_THRESHOLD = int(os.getenv('NEWS_BUY_THRESHOLD', '30'))
+        cls.NEWS_SELL_THRESHOLD = int(os.getenv('NEWS_SELL_THRESHOLD', '-30'))
+        cls.NEWS_POSITIVE_SURGE_ADJUST = float(os.getenv('NEWS_POSITIVE_SURGE_ADJUST', '50'))
+        cls.NEWS_NEGATIVE_STOPLOSS_ADJUST = float(os.getenv('NEWS_NEGATIVE_STOPLOSS_ADJUST', '50'))
+        
+        # 알림 설정
+        cls.ENABLE_NOTIFICATIONS = os.getenv('ENABLE_NOTIFICATIONS', 'True').lower() == 'true'
+        cls.ENABLE_SOUND_ALERTS = os.getenv('ENABLE_SOUND_ALERTS', 'True').lower() == 'true'
+        
+        # 헬스 모니터
+        cls.ENABLE_HEALTH_MONITOR = os.getenv('ENABLE_HEALTH_MONITOR', 'True').lower() == 'true'
+        cls.HEALTH_CHECK_INTERVAL = int(os.getenv('HEALTH_CHECK_INTERVAL', '60'))
+        cls.ENABLE_AUTO_RECOVERY = os.getenv('ENABLE_AUTO_RECOVERY', 'True').lower() == 'true'
+        
+        # 스케줄러
+        cls.ENABLE_AUTO_SHUTDOWN = os.getenv('ENABLE_AUTO_SHUTDOWN', 'False').lower() == 'true'
+        
+        # 시장 시간
+        cls.MARKET_PRE_OPEN_TIME = os.getenv('MARKET_PRE_OPEN_TIME', '08:30')
+        cls.MARKET_OPEN_TIME = os.getenv('MARKET_OPEN_TIME', '09:00')
+        cls.MARKET_CLOSE_TIME = os.getenv('MARKET_CLOSE_TIME', '15:30')
+        cls.MARKET_AFTER_HOURS_START = os.getenv('MARKET_AFTER_HOURS_START', '15:40')
+        cls.MARKET_AFTER_HOURS_END = os.getenv('MARKET_AFTER_HOURS_END', '18:00')
+        cls.AUTO_START_ENABLED = os.getenv('AUTO_START_ENABLED', 'False').lower() == 'true'
+        cls.AUTO_START_TIME = os.getenv('AUTO_START_TIME', '08:50')
+        cls.AUTO_STOP_TIME = os.getenv('AUTO_STOP_TIME', '18:05')
+        
+        # DB 설정
+        cls.DB_ENABLED = os.getenv('DB_ENABLED', 'False').lower() == 'true'
+        cls.DB_PATH = os.getenv('DB_PATH', 'trading_data.db')
+        cls.DB_CANDLE_INTERVAL = int(os.getenv('DB_CANDLE_INTERVAL', '1'))
+        cls.DB_RETENTION_DAYS = int(os.getenv('DB_RETENTION_DAYS', '90'))
+        cls.DB_AUTO_BACKUP = os.getenv('DB_AUTO_BACKUP', 'True').lower() == 'true'
+        cls.DB_BACKUP_INTERVAL_DAYS = int(os.getenv('DB_BACKUP_INTERVAL_DAYS', '7'))
+        cls.DB_PARQUET_DIR = os.getenv('DB_PARQUET_DIR', 'db_exports')
+        
+        cls.LOG_DIR = os.getenv('LOG_DIR', 'logs')
+        
+        # 검증
+        validation_errors = cls.validate()
+        if validation_errors:
+            from logger import log
+            log.warning("⚠️  설정 재로드 후 검증 오류:")
+            for error in validation_errors:
+                log.warning(f"  - {error}")
+        else:
+            from logger import log
+            log.success("✅ 설정 재로드 완료 - 검증 통과")
+        
+        # 등록된 콜백 호출
+        for callback in cls._reload_callbacks:
+            try:
+                callback()
+            except Exception as e:
+                from logger import log
+                log.error(f"설정 재로드 콜백 실행 오류: {e}")
     
     @classmethod
     def print_config(cls):

@@ -544,6 +544,71 @@ class KiwoomAPI:
             log.error(f"종목명 조회 중 오류 ({stock_code}): {e}")
             return stock_code
     
+    def search_stock_by_name(self, stock_name: str, max_results: int = 10) -> List[Dict[str, str]]:
+        """
+        🆕 종목명으로 종목 코드 검색 (부분 일치 지원)
+        
+        Args:
+            stock_name: 검색할 종목명 (예: "삼성", "삼성전자")
+            max_results: 최대 결과 수
+        
+        Returns:
+            매칭된 종목 리스트 [{'code': '005930', 'name': '삼성전자'}, ...]
+        """
+        try:
+            results = []
+            search_name = stock_name.strip().upper()
+            
+            if not search_name:
+                return results
+            
+            log.info(f"종목명 검색: '{stock_name}'")
+            
+            # 코스피(0) + 코스닥(10) 전체 종목 코드 가져오기
+            for market_code in [0, 10]:
+                market_name = "코스피" if market_code == 0 else "코스닥"
+                
+                # GetCodeListByMarket: 시장별 종목 코드 리스트 (세미콜론 구분)
+                code_list_str = self.ocx.dynamicCall(
+                    "GetCodeListByMarket(QString)",
+                    str(market_code)
+                ).strip()
+                
+                if not code_list_str:
+                    continue
+                
+                # 종목 코드 분리
+                code_list = code_list_str.split(';')
+                
+                for code in code_list:
+                    code = code.strip()
+                    if not code:
+                        continue
+                    
+                    # 종목명 조회
+                    name = self.get_stock_name(code)
+                    name_upper = name.upper()
+                    
+                    # 부분 일치 검색
+                    if search_name in name_upper or name_upper in search_name:
+                        results.append({
+                            'code': code,
+                            'name': name,
+                            'market': market_name
+                        })
+                        
+                        # 최대 결과 수 제한
+                        if len(results) >= max_results:
+                            log.info(f"검색 완료: {len(results)}개 종목 발견")
+                            return results
+            
+            log.info(f"검색 완료: {len(results)}개 종목 발견")
+            return results
+            
+        except Exception as e:
+            log.error(f"종목명 검색 중 오류: {e}")
+            return []
+    
     def get_holdings(self) -> List[Dict]:
         """
         보유 종목 조회
@@ -614,6 +679,63 @@ class KiwoomAPI:
         except Exception as e:
             log.error(f"보유종목 조회 중 오류: {e}")
             return []
+    
+    def get_stock_info(self, stock_code: str) -> Optional[dict]:
+        """
+        종목 정보 조회 (종목명 + 현재가 + 등락률)
+        
+        Args:
+            stock_code: 종목코드
+        
+        Returns:
+            종목 정보 딕셔너리 또는 None
+            {
+                'name': 종목명,
+                'current_price': 현재가,
+                'change_rate': 등락률,
+                'volume': 거래량
+            }
+        """
+        try:
+            # 1. 종목명 조회 (API 제한 없음)
+            stock_name = self.get_stock_name(stock_code)
+            
+            # 2. 현재가 조회 (API 제한 있음)
+            self._wait_for_request()
+            
+            self.ocx.dynamicCall(
+                "SetInputValue(QString, QString)",
+                "종목코드",
+                stock_code
+            )
+            
+            self.request_event_loop = QEventLoop()
+            ret = self.ocx.dynamicCall(
+                "CommRqData(QString, QString, int, QString)",
+                "주식기본정보요청",
+                "OPT10001",
+                0,
+                "2003"  # 화면번호
+            )
+            
+            if ret == 0:
+                self.request_event_loop.exec_()
+                price_data = self.data_cache.get('current_price', {})
+                
+                if price_data:
+                    return {
+                        'name': stock_name,
+                        'current_price': price_data.get('current_price', 0),
+                        'change_rate': price_data.get('change_rate', 0),
+                        'volume': price_data.get('volume', 0)
+                    }
+            
+            log.warning(f"종목 정보 조회 실패: {stock_code}")
+            return None
+            
+        except Exception as e:
+            log.error(f"종목 정보 조회 오류: {e}")
+            return None
     
     def get_current_price(self, stock_code: str) -> Optional[int]:
         """

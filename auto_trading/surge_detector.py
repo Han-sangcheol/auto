@@ -24,6 +24,9 @@ from typing import Dict, List, Optional, Callable
 from datetime import datetime, timedelta
 from collections import defaultdict
 import time
+import threading
+import os
+import json
 from logger import log
 from config import Config
 
@@ -38,7 +41,8 @@ class SurgeCandidate:
         price: int,
         change_rate: float,
         volume: int,
-        trade_value: int
+        trade_value: int,
+        candidate_type: str = "surge"  # 🆕 "surge" (급등주) 또는 "watchlist" (관심주)
     ):
         self.code = code
         self.name = name
@@ -46,6 +50,7 @@ class SurgeCandidate:
         self.change_rate = change_rate
         self.volume = volume
         self.trade_value = trade_value
+        self.candidate_type = candidate_type  # 🆕 타입 저장
         
         # 모니터링 데이터
         self.initial_price = price
@@ -331,6 +336,17 @@ class SurgeDetector:
             except Exception as e:
                 log.warning(f"⚠️  뉴스 분석 모듈 로드 실패 (기능 비활성화): {e}")
         
+        # 🆕 백그라운드 스레드 (뉴스 업데이트 및 상태 로깅)
+        self.news_update_thread = None
+        self.news_update_interval = 300  # 5분마다 뉴스 업데이트
+        self.status_log_interval = 60  # 1분마다 상태 로깅
+        self.stop_background_thread = threading.Event()
+        self.last_news_update = None
+        self.last_status_log = datetime.now()
+        
+        # 🆕 관심주 저장 파일
+        self.watchlist_file = os.path.join(Config.LOG_DIR, "watchlist.json")
+        
         log.info(
             f"급등주 감지기 초기화: "
             f"후보 {self.candidate_count}개, "
@@ -393,10 +409,30 @@ class SurgeDetector:
             
             log.success(f"✅ 급등주 후보군 등록 완료: {len(self.candidates)}개 종목")
             
-            # 🆕 뉴스 분석 (선택적)
+            # 🆕 뉴스 분석 (비동기 실행 - GUI 블로킹 방지, 상위 10개만)
             if self.news_crawler and self.sentiment_analyzer:
-                log.info("2-1️⃣ 뉴스 분석 중...")
-                self._analyze_news_for_candidates()
+                log.info("2-1️⃣ 뉴스 분석 별도 스레드 시작 예약 (상위 10개 종목만)...")
+                # 별도 스레드에서 비동기 실행 (GUI 블로킹 방지)
+                def async_news_analysis():
+                    try:
+                        import time
+                        time.sleep(3)  # GUI 완전 초기화 대기
+                        log.info("📰 뉴스 분석 시작 (상위 10개 종목)...")
+                        self._analyze_news_for_candidates(max_stocks=10)  # 🔥 상위 10개만!
+                        self.last_news_update = datetime.now()
+                        log.success("✅ 초기 뉴스 분석 완료")
+                    except Exception as e:
+                        log.error(f"초기 뉴스 분석 오류: {e}")
+                        import traceback
+                        log.error(traceback.format_exc())
+                
+                news_thread = threading.Thread(
+                    target=async_news_analysis,
+                    daemon=True,
+                    name="InitialNewsAnalysis"
+                )
+                news_thread.start()
+                log.success("✅ 뉴스 분석 스레드 시작됨 (백그라운드, 최대 10개 종목)")
             
             # 실시간 시세 등록
             log.info("3️⃣ 급등주 후보군 실시간 시세 등록 중...")
@@ -441,7 +477,7 @@ class SurgeDetector:
         self.is_monitoring = True
         log.success(f"🚀 급등주 모니터링 시작!")
         log.info(f"   📋 후보군: {len(self.candidates)}개 종목")
-        log.info(f"   📊 조건: 상승률 >= {self.min_change_rate}%, 거래량 >= {self.min_volume_ratio}배")
+        log.info(f"   📊 조건: 모니터링 추가 상승률 >= {self.min_monitoring_change_rate}%, 거래량 >= {self.min_volume_ratio}배")
         
         # 후보군 샘플 출력 (처음 5개)
         sample_codes = list(self.candidates.keys())[:5]
@@ -450,18 +486,183 @@ class SurgeDetector:
             log.info(f"   • {candidate.name}({code})")
         if len(self.candidates) > 5:
             log.info(f"   ... 외 {len(self.candidates) - 5}개")
+        
+        # 🆕 백그라운드 스레드 시작 (뉴스 업데이트 및 상태 로깅)
+        if self.news_crawler:
+            self.stop_background_thread.clear()
+            self.news_update_thread = threading.Thread(
+                target=self._background_monitoring_loop,
+                daemon=True,
+                name="SurgeDetectorBackgroundThread"
+            )
+            self.news_update_thread.start()
+            log.info("✅ 백그라운드 모니터링 스레드 시작 (뉴스 업데이트 5분마다, 상태 로깅 1분마다)")
     
     def stop_monitoring(self):
         """모니터링 중지"""
         self.is_monitoring = False
+        
+        # 🆕 백그라운드 스레드 중지
+        if self.news_update_thread and self.news_update_thread.is_alive():
+            log.info("백그라운드 모니터링 스레드 중지 중...")
+            self.stop_background_thread.set()
+            self.news_update_thread.join(timeout=5)
+        
         log.info("급등주 모니터링 중지")
     
-    def _analyze_news_for_candidates(self):
+    def reload_settings(self):
+        """
+        🆕 설정 재로드 (Config 변경 시 호출)
+        """
+        log.info("🔄 SurgeDetector 설정 재로드 중...")
+        
+        # 설정값 업데이트
+        old_candidate_count = self.candidate_count
+        old_min_change_rate = self.min_change_rate
+        old_min_monitoring_change_rate = self.min_monitoring_change_rate
+        old_min_volume_ratio = self.min_volume_ratio
+        old_cooldown = self.cooldown_minutes
+        
+        self.candidate_count = Config.SURGE_CANDIDATE_COUNT
+        self.min_change_rate = Config.SURGE_MIN_CHANGE_RATE
+        self.min_monitoring_change_rate = Config.SURGE_MONITORING_CHANGE_RATE
+        self.min_volume_ratio = Config.SURGE_MIN_VOLUME_RATIO
+        self.cooldown_minutes = Config.SURGE_COOLDOWN_MINUTES
+        
+        # 변경사항 로그
+        if old_candidate_count != self.candidate_count:
+            log.info(f"   후보 종목 수: {old_candidate_count} → {self.candidate_count}")
+        if old_min_change_rate != self.min_change_rate:
+            log.info(f"   최소 상승률: {old_min_change_rate}% → {self.min_change_rate}%")
+        if old_min_monitoring_change_rate != self.min_monitoring_change_rate:
+            log.info(f"   모니터링 추가 상승률: {old_min_monitoring_change_rate}% → {self.min_monitoring_change_rate}%")
+        if old_min_volume_ratio != self.min_volume_ratio:
+            log.info(f"   최소 거래량 비율: {old_min_volume_ratio}배 → {self.min_volume_ratio}배")
+        if old_cooldown != self.cooldown_minutes:
+            log.info(f"   쿨다운 시간: {old_cooldown}분 → {self.cooldown_minutes}분")
+        
+        log.success("✅ SurgeDetector 설정 재로드 완료")
+    
+    def _background_monitoring_loop(self):
+        """
+        🆕 백그라운드 모니터링 루프 (별도 스레드)
+        
+        주기적으로:
+        1. 뉴스 업데이트 (5분마다)
+        2. 상태 로깅 (1분마다)
+        """
+        log.info("📡 백그라운드 모니터링 루프 시작")
+        
+        while not self.stop_background_thread.is_set():
+            try:
+                now = datetime.now()
+                
+                # 1. 상태 로깅 (1분마다)
+                if (now - self.last_status_log).total_seconds() >= self.status_log_interval:
+                    self._log_monitoring_status()
+                    self.last_status_log = now
+                
+                # 2. 뉴스 업데이트 (5분마다, 상위 10개만)
+                if self.last_news_update is None or \
+                   (now - self.last_news_update).total_seconds() >= self.news_update_interval:
+                    if self.is_monitoring and self.news_crawler:
+                        log.info("🔄 뉴스 분석 업데이트 중 (상위 10개 종목)...")
+                        self._analyze_news_for_candidates(max_stocks=10)  # 🔥 상위 10개만!
+                        self.last_news_update = now
+                
+                # 10초마다 체크
+                self.stop_background_thread.wait(10)
+                
+            except Exception as e:
+                log.error(f"백그라운드 모니터링 루프 오류: {e}")
+                import traceback
+                log.debug(traceback.format_exc())
+                time.sleep(10)
+        
+        log.info("📴 백그라운드 모니터링 루프 종료")
+    
+    def _log_monitoring_status(self):
+        """
+        🆕 급등주 모니터링 상태 로깅
+        
+        현재 모니터링 중인 종목 수, 감지된 급등주 통계 등을 출력합니다.
+        """
+        if not self.is_monitoring:
+            return
+        
+        try:
+            # 기본 통계
+            total_candidates = len(self.candidates)
+            log.info("=" * 70)
+            log.info(f"📊 급등주 모니터링 상태 (현재 시각: {datetime.now().strftime('%H:%M:%S')})")
+            log.info("=" * 70)
+            log.info(f"   📋 모니터링 종목: {total_candidates}개")
+            log.info(f"   🔍 총 감지 횟수: {self.total_detected}회")
+            
+            # 🆕 후보군을 구간별로 분류
+            if self.candidates:
+                sorted_candidates = sorted(
+                    self.candidates.values(),
+                    key=lambda c: c.get_monitoring_change_rate(),
+                    reverse=True
+                )
+                
+                # 구간별 카운트
+                surge_candidates = [c for c in sorted_candidates if c.get_monitoring_change_rate() >= self.min_monitoring_change_rate]
+                rising_candidates = [c for c in sorted_candidates if 0 < c.get_monitoring_change_rate() < self.min_monitoring_change_rate]
+                falling_candidates = [c for c in sorted_candidates if c.get_monitoring_change_rate() <= 0]
+                
+                log.info(f"   📈 구간별 분포:")
+                log.info(f"      🔥 급등 후보 (추가 상승 >={self.min_monitoring_change_rate}%): {len(surge_candidates)}개")
+                log.info(f"      ⬆️  상승 중 (0% ~ {self.min_monitoring_change_rate}%): {len(rising_candidates)}개")
+                log.info(f"      ⬇️  하락 중 (<=0%): {len(falling_candidates)}개")
+                
+                # 🔥 급등 후보 상세 (상위 10개)
+                if surge_candidates:
+                    log.info(f"   🔥 급등 후보 상세 (상위 10개):")
+                    for i, candidate in enumerate(surge_candidates[:10], 1):
+                        monitoring_change = candidate.get_monitoring_change_rate()
+                        volume_ratio = candidate.get_volume_ratio()
+                        log.info(
+                            f"      {i:2d}. {candidate.name:10s}({candidate.code}) | "
+                            f"가격: {candidate.current_price:>7,d}원 | "
+                            f"추가상승: {monitoring_change:+6.2f}% | "
+                            f"거래량: {volume_ratio:5.2f}배"
+                        )
+                
+                # ⬆️ 주요 상승 종목 (상위 5개, 간략)
+                if rising_candidates and len(rising_candidates) > 0:
+                    log.info(f"   ⬆️  주요 상승 종목 (상위 5개):")
+                    for i, candidate in enumerate(rising_candidates[:5], 1):
+                        monitoring_change = candidate.get_monitoring_change_rate()
+                        log.info(
+                            f"      {i}. {candidate.name}({candidate.code}) "
+                            f"{candidate.current_price:,}원 ({monitoring_change:+.2f}%)"
+                        )
+            
+            # 뉴스 분석 상태
+            if self.news_crawler:
+                news_analyzed_count = sum(1 for c in self.candidates.values() if c.news_count > 0)
+                positive_news_count = sum(1 for c in self.candidates.values() if c.news_score > 0)
+                negative_news_count = sum(1 for c in self.candidates.values() if c.news_score < 0)
+                log.info(f"   📰 뉴스 분석: {news_analyzed_count}/{total_candidates}개 종목")
+                if news_analyzed_count > 0:
+                    log.info(f"      호재: {positive_news_count}개 | 악재: {negative_news_count}개")
+            
+            log.info("=" * 70)
+            
+        except Exception as e:
+            log.error(f"상태 로깅 오류: {e}")
+    
+    def _analyze_news_for_candidates(self, max_stocks: int = None):
         """
         🆕 후보군 종목들의 뉴스 분석
         
         각 후보 종목에 대해 최신 뉴스를 수집하고 감성 분석을 수행합니다.
         뉴스 점수는 급등 기준 조정에 사용됩니다.
+        
+        Args:
+            max_stocks: 최대 분석 종목 수 (None이면 전체)
         """
         if not self.news_crawler or not self.sentiment_analyzer:
             return
@@ -471,10 +672,22 @@ class SurgeDetector:
             positive_count = 0
             negative_count = 0
             
-            for stock_code, candidate in self.candidates.items():
+            # 🔥 분석 대상 종목 제한
+            candidates_to_analyze = list(self.candidates.items())
+            if max_stocks:
+                candidates_to_analyze = candidates_to_analyze[:max_stocks]
+                log.info(f"📰 뉴스 분석 시작: 상위 {len(candidates_to_analyze)}개 종목 (총 {len(self.candidates)}개 중)")
+            else:
+                log.info(f"📰 뉴스 분석 시작: 총 {len(candidates_to_analyze)}개 종목")
+            
+            for idx, (stock_code, candidate) in enumerate(candidates_to_analyze, 1):
                 try:
-                    # 뉴스 수집 (최대 10개)
-                    news_list = self.news_crawler.get_latest_news(stock_code, max_count=10)
+                    # 🔥 로그 최소화 - 진행 중인 종목만 표시 (5개마다)
+                    if idx == 1 or idx % 5 == 0 or idx == len(candidates_to_analyze):
+                        log.info(f"   📰 진행: {idx}/{len(candidates_to_analyze)} 종목 분석 중...")
+                    
+                    # 뉴스 수집 (최대 5개로 줄임)
+                    news_list = self.news_crawler.get_latest_news(stock_code, max_count=5)
                     
                     if len(news_list) >= Config.NEWS_MIN_COUNT:
                         # 감성 분석
@@ -490,25 +703,15 @@ class SurgeDetector:
                         
                         analyzed_count += 1
                         
-                        # 통계
+                        # 🔥 통계만 카운트 (로그 최소화)
                         if analysis['average_score'] >= Config.NEWS_BUY_THRESHOLD:
                             positive_count += 1
-                            log.info(
-                                f"   ✅ 호재: {candidate.name}({stock_code}) "
-                                f"점수: {analysis['average_score']:+d}/100 "
-                                f"(뉴스 {len(news_list)}개)"
-                            )
                         elif analysis['average_score'] <= Config.NEWS_SELL_THRESHOLD:
                             negative_count += 1
-                            log.warning(
-                                f"   ⚠️  악재: {candidate.name}({stock_code}) "
-                                f"점수: {analysis['average_score']:+d}/100 "
-                                f"(뉴스 {len(news_list)}개)"
-                            )
                     
-                    # API 과부하 방지
+                    # API 과부하 방지 (대기 시간 단축)
                     import time
-                    time.sleep(0.5)
+                    time.sleep(0.3)
                     
                 except Exception as e:
                     log.debug(f"   뉴스 분석 실패 ({stock_code}): {e}")
@@ -653,8 +856,11 @@ class SurgeDetector:
                 if adjusted_threshold != self.min_monitoring_change_rate:
                     news_info += f" → 기준 {self.min_monitoring_change_rate:.1f}%→{adjusted_threshold:.1f}%"
             
+            # 🆕 관심주 여부 표시
+            type_marker = "⭐관심주" if candidate.candidate_type == "watchlist" else "🔥급등주"
+            
             log.warning(
-                f"🚀 급등 감지! {candidate.name} ({candidate.code}) | "
+                f"🚀 급등 감지! [{type_marker}] {candidate.name} ({candidate.code}) | "
                 f"전일대비: {candidate.current_change_rate:+.2f}% "
                 f"(시작시점: {candidate.monitoring_start_change_rate:+.2f}%, 추가상승: {monitoring_change:+.2f}%) | "
                 f"거래량: {volume_ratio:.2f}배 | "
@@ -681,6 +887,185 @@ class SurgeDetector:
             후보 종목 정보 또는 None
         """
         return self.candidates.get(stock_code)
+    
+    def add_watchlist_candidate(
+        self,
+        stock_code: str,
+        stock_name: str,
+        current_price: int,
+        change_rate: float
+    ) -> bool:
+        """
+        🆕 관심주 후보 추가
+        
+        Args:
+            stock_code: 종목 코드
+            stock_name: 종목명
+            current_price: 현재가
+            change_rate: 등락률
+        
+        Returns:
+            추가 성공 여부
+        """
+        try:
+            log.info(f"[관심주 추가] 시작: {stock_name}({stock_code})")
+            
+            # 이미 있는지 확인
+            if stock_code in self.candidates:
+                existing = self.candidates[stock_code]
+                existing_type = getattr(existing, 'candidate_type', 'surge')
+                log.warning(
+                    f"⚠️  이미 등록된 종목: {stock_name}({stock_code}) "
+                    f"- 타입: {'관심주' if existing_type == 'watchlist' else '급등주'}"
+                )
+                return False
+            
+            log.debug(f"[관심주 추가] 후보 생성 중: {stock_name}({stock_code})")
+            
+            # 관심주 후보 생성
+            candidate = SurgeCandidate(
+                code=stock_code,
+                name=stock_name,
+                price=current_price,
+                change_rate=change_rate,
+                volume=0,  # 관심주는 거래량 미사용
+                trade_value=0,  # 관심주는 거래대금 미사용
+                candidate_type="watchlist"  # 🆕 타입: 관심주
+            )
+            
+            self.candidates[stock_code] = candidate
+            log.success(f"⭐ 관심주 추가 성공: {stock_name}({stock_code}) {current_price:,}원 ({change_rate:+.2f}%)")
+            
+            # 🆕 파일에 저장
+            log.debug(f"[관심주 추가] 저장 중...")
+            self.save_watchlist()
+            
+            # 🆕 실시간 시세 등록
+            if self.is_monitoring:
+                try:
+                    self.kiwoom.register_real_data([stock_code])
+                    log.info(f"   ✅ 실시간 시세 등록 완료: {stock_code}")
+                except Exception as e:
+                    log.warning(f"   ⚠️  실시간 시세 등록 실패: {e}")
+            
+            # 🆕 뉴스 분석 (비동기)
+            if self.news_crawler and self.sentiment_analyzer:
+                try:
+                    import threading
+                    def analyze_news():
+                        try:
+                            news_list = self.news_crawler.get_latest_news(stock_code, max_count=10)
+                            if len(news_list) >= Config.NEWS_MIN_COUNT:
+                                analysis = self.sentiment_analyzer.analyze_news_list(news_list)
+                                candidate.update_news_sentiment(
+                                    news_score=analysis['average_score'],
+                                    news_count=len(news_list),
+                                    news_titles=[n.title for n in news_list[:3]]
+                                )
+                                log.info(f"   📰 뉴스 분석: {news_list[0].title[:30]}... (점수: {analysis['average_score']:+d})")
+                        except Exception as e:
+                            log.debug(f"   뉴스 분석 오류: {e}")
+                    
+                    news_thread = threading.Thread(target=analyze_news, daemon=True)
+                    news_thread.start()
+                except Exception as e:
+                    log.debug(f"뉴스 분석 스레드 시작 실패: {e}")
+            
+            return True
+            
+        except Exception as e:
+            log.error(f"❌ 관심주 추가 실패: {e}")
+            return False
+    
+    def save_watchlist(self):
+        """
+        🆕 관심주 목록을 파일에 저장
+        """
+        try:
+            # 관심주만 필터링
+            watchlist_data = []
+            for code, candidate in self.candidates.items():
+                if hasattr(candidate, 'candidate_type') and candidate.candidate_type == "watchlist":
+                    watchlist_data.append({
+                        'code': code,
+                        'name': candidate.name,
+                        'added_time': datetime.now().isoformat()
+                    })
+            
+            # 파일에 저장
+            os.makedirs(os.path.dirname(self.watchlist_file), exist_ok=True)
+            with open(self.watchlist_file, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'version': '1.0',
+                    'last_updated': datetime.now().isoformat(),
+                    'watchlist': watchlist_data
+                }, f, ensure_ascii=False, indent=2)
+            
+            log.info(f"✅ 관심주 {len(watchlist_data)}개 저장 완료: {self.watchlist_file}")
+            
+        except Exception as e:
+            log.error(f"❌ 관심주 저장 실패: {e}")
+    
+    def load_watchlist(self) -> List[Dict]:
+        """
+        🆕 저장된 관심주 목록 로드
+        
+        Returns:
+            관심주 리스트 [{'code': '005930', 'name': '삼성전자'}, ...]
+        """
+        try:
+            if not os.path.exists(self.watchlist_file):
+                log.debug("저장된 관심주 없음")
+                return []
+            
+            with open(self.watchlist_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            watchlist = data.get('watchlist', [])
+            log.info(f"✅ 관심주 {len(watchlist)}개 로드 완료")
+            
+            return watchlist
+            
+        except Exception as e:
+            log.error(f"❌ 관심주 로드 실패: {e}")
+            return []
+    
+    def remove_watchlist_candidate(self, stock_code: str) -> bool:
+        """
+        🆕 관심주 삭제
+        
+        Args:
+            stock_code: 종목 코드
+        
+        Returns:
+            삭제 성공 여부
+        """
+        try:
+            if stock_code not in self.candidates:
+                log.warning(f"⚠️  삭제할 종목이 없음: {stock_code}")
+                return False
+            
+            candidate = self.candidates[stock_code]
+            
+            # 관심주만 삭제 가능
+            if not hasattr(candidate, 'candidate_type') or candidate.candidate_type != "watchlist":
+                log.warning(f"⚠️  관심주가 아니므로 삭제 불가: {candidate.name}({stock_code})")
+                return False
+            
+            # 후보군에서 제거
+            stock_name = candidate.name
+            del self.candidates[stock_code]
+            
+            log.success(f"🗑️  관심주 삭제: {stock_name}({stock_code})")
+            
+            # 파일에 저장
+            self.save_watchlist()
+            
+            return True
+            
+        except Exception as e:
+            log.error(f"❌ 관심주 삭제 실패: {e}")
+            return False
     
     def get_statistics(self) -> Dict:
         """

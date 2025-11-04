@@ -48,6 +48,8 @@ import time
 from collections import defaultdict
 import threading
 import traceback
+import json
+import os
 
 from PyQt5.QtCore import QTimer
 
@@ -111,6 +113,12 @@ class TradingEngine:
         
         # 🔄 데이터베이스 저장 기능 제거 - 외부 데이터 소스(yfinance) 사용
         # 차트는 advanced_chart_widget.py에서 yfinance로 조회하여 표시
+        
+        # 📦 거래 이력 블랙박스 데이터베이스
+        from trading_history_db import TradingHistoryDB
+        self.history_db = TradingHistoryDB(
+            db_path=os.path.join(Config.LOG_DIR, "trading_history.db")
+        )
         
         # 실행 상태
         self.is_running = False
@@ -240,6 +248,20 @@ class TradingEngine:
                     holding['buy_price']
                 )
             
+            # 🆕 데이터베이스에서 매도 금지 상태 복원
+            try:
+                open_positions = self.history_db.get_open_positions()
+                for db_pos in open_positions:
+                    stock_code = db_pos['stock_code']
+                    if stock_code in self.risk_manager.positions:
+                        position = self.risk_manager.positions[stock_code]
+                        position.sell_blocked = bool(db_pos.get('sell_blocked', 0))
+                        position.db_position_id = db_pos['position_id']
+                        if position.sell_blocked:
+                            log.info(f"   📌 매도 금지 복원: {position.stock_name}({stock_code})")
+            except Exception as restore_error:
+                log.warning(f"⚠️  매도 금지 상태 복원 실패: {restore_error}")
+            
             # API 호출 간격 확보
             time.sleep(1)
             
@@ -280,6 +302,40 @@ class TradingEngine:
                     
                     if self.surge_detector.initialize():
                         log.success("✅ 급등주 감지 기능 활성화 완료")
+                        
+                        # 🆕 저장된 관심주 복원
+                        try:
+                            log.info("   📂 저장된 관심주 로드 중...")
+                            watchlist = self.surge_detector.load_watchlist()
+                            
+                            if watchlist:
+                                log.info(f"   관심주 {len(watchlist)}개 복원 시작...")
+                                for item in watchlist:
+                                    stock_code = item['code']
+                                    stock_name = item['name']
+                                    
+                                    # 현재가 조회
+                                    stock_info = self.kiwoom.get_stock_info(stock_code)
+                                    if stock_info:
+                                        success = self.surge_detector.add_watchlist_candidate(
+                                            stock_code=stock_code,
+                                            stock_name=stock_name,
+                                            current_price=stock_info['current_price'],
+                                            change_rate=stock_info['change_rate']
+                                        )
+                                        if success:
+                                            log.info(f"   ⭐ 관심주 복원: {stock_name}({stock_code})")
+                                        time.sleep(0.5)  # API 호출 간격
+                                    else:
+                                        log.warning(f"   ⚠️  종목 정보 조회 실패: {stock_name}({stock_code})")
+                                
+                                log.success(f"✅ 관심주 {len(watchlist)}개 복원 완료")
+                            else:
+                                log.info("   저장된 관심주 없음")
+                                
+                        except Exception as watchlist_error:
+                            log.warning(f"⚠️  관심주 복원 실패: {watchlist_error}")
+                        
                         break
                     else:
                         if attempt < max_retries - 1:
@@ -348,12 +404,58 @@ class TradingEngine:
                     log.warning(f"스케줄러 초기화 실패: {e}")
                     self.scheduler = None
             
+            # 🆕 뉴스 크롤링 패턴 사전 로드
+            if self.surge_detector and hasattr(self.surge_detector, 'news_crawler'):
+                news_crawler = self.surge_detector.news_crawler
+                if news_crawler and hasattr(news_crawler, 'pattern_learner'):
+                    try:
+                        log.info("뉴스 크롤링 패턴 로드 중...")
+                        news_crawler.pattern_learner.load_patterns()
+                        log.success("✅ 저장된 크롤링 패턴 로드 완료")
+                    except Exception as e:
+                        log.warning(f"⚠️  크롤링 패턴 로드 실패 (신규 패턴 시작): {e}")
+            
+            # 🆕 설정 재로드 콜백 등록
+            log.info("설정 재로드 시스템 등록 중...")
+            Config.register_reload_callback(self._on_config_reloaded)
+            log.success("✅ 설정 재로드 시스템 활성화")
+            
             log.success("자동매매 엔진 초기화 완료")
             return True
             
         except Exception as e:
             log.error(f"엔진 초기화 중 오류: {e}")
             return False
+    
+    def _on_config_reloaded(self):
+        """
+        🆕 설정 재로드 콜백 (Config 변경 시 자동 호출)
+        """
+        try:
+            log.info("=" * 70)
+            log.info("⚙️  설정 변경 감지 - 자동매매 엔진 업데이트 중...")
+            log.info("=" * 70)
+            
+            # 1. RiskManager 업데이트
+            if self.risk_manager:
+                self.risk_manager.reload_settings()
+            
+            # 2. SurgeDetector 업데이트
+            if self.surge_detector:
+                self.surge_detector.reload_settings()
+            
+            # 3. MarketScheduler 업데이트 (필요시)
+            # 시장 시간 설정이 변경될 수 있음
+            
+            log.info("=" * 70)
+            log.success("✅ 자동매매 엔진 설정 업데이트 완료!")
+            log.success("   모든 변경사항이 즉시 적용되었습니다.")
+            log.info("=" * 70)
+            
+        except Exception as e:
+            log.error(f"설정 재로드 중 오류: {e}")
+            import traceback
+            log.error(traceback.format_exc())
     
     def set_surge_approval_callback(self, callback: Callable):
         """
@@ -747,11 +849,6 @@ class TradingEngine:
             if self.surge_detector and self.surge_detector.is_monitoring:
                 self.surge_detector.on_price_update(stock_code, price_data)
             
-            # 데이터베이스에 틱 데이터 전달 (1분봉 집계)
-            if self.candle_aggregator:
-                volume = price_data.get('volume', 0)
-                self.candle_aggregator.on_tick(stock_code, current_price, volume)
-            
             # 관심 종목이 아니면 매매 신호 생성 안 함
             if stock_code not in self.watch_list:
                 return
@@ -763,11 +860,12 @@ class TradingEngine:
             if len(self.price_history[stock_code]) > 100:
                 self.price_history[stock_code] = self.price_history[stock_code][-100:]
             
-            # 관심 종목의 실시간 가격 표시 (5번째 업데이트마다) - 단타에 적합
-            if len(self.price_history[stock_code]) % 5 == 0:
+            # 🆕 관심 종목의 실시간 가격 표시 (30번째 업데이트마다, 과도한 로그 방지)
+            data_count = len(self.price_history[stock_code])
+            if data_count <= 100 and data_count % 30 == 0:
                 log.info(
-                    f"📊 실시간: {stock_code} {current_price:,}원 "
-                    f"({change_rate:+.2f}%) | 데이터: {len(self.price_history[stock_code])}개"
+                    f"📊 관심종목 실시간: {stock_code} {current_price:,}원 "
+                    f"({change_rate:+.2f}%) | 데이터: {data_count}개"
                 )
             
             # 보유 중인 종목의 현재가 업데이트
@@ -890,30 +988,49 @@ class TradingEngine:
         try:
             log.info(f"🔍 [execute_buy] 시작: {stock_code}, 가격: {current_price:,}원")
             
-            # 리스크 검증
-            log.info(f"🔍 [execute_buy] 리스크 검증 중...")
-            is_valid, reason = self.risk_manager.validate_new_position(stock_code)
+            # 🆕 물타기 여부 확인
+            is_average_down = stock_code in self.risk_manager.positions
+            
+            # 리스크 검증 (물타기 허용)
+            log.info(f"🔍 [execute_buy] 리스크 검증 중... (물타기: {'예' if is_average_down else '아니오'})")
+            is_valid, reason = self.risk_manager.validate_new_position(stock_code, allow_average_down=True)
             if not is_valid:
                 log.warning(f"❌ 매수 불가: {stock_code}")
                 log.warning(f"   사유: {reason}")
                 log.warning(f"   현재 보유: {len(self.risk_manager.positions)}/{Config.MAX_STOCKS}")
                 log.warning(f"   현재 잔고: {self.risk_manager.current_balance:,}원")
                 return
-            log.info(f"✅ [execute_buy] 리스크 검증 통과")
+            log.info(f"✅ [execute_buy] 리스크 검증 통과 - {reason}")
             
-            # 매수 수량 계산
+            # 🆕 매수 수량 계산 (물타기인 경우 수량 비율 적용)
             log.info(f"🔍 [execute_buy] 매수 수량 계산 중...")
-            quantity = self.risk_manager.calculate_position_size(current_price)
+            if is_average_down:
+                # 물타기: 기존 수량 * 비율
+                existing_position = self.risk_manager.positions[stock_code]
+                base_quantity = existing_position.quantity
+                quantity = int(base_quantity * Config.AVERAGE_DOWN_SIZE_RATIO)
+                log.info(f"   물타기 수량: {base_quantity}주 × {Config.AVERAGE_DOWN_SIZE_RATIO} = {quantity}주")
+            else:
+                # 신규 매수: 일반 계산
+                quantity = self.risk_manager.calculate_position_size(current_price)
+            
             if quantity < 1:
                 log.warning(f"매수 불가: {stock_code} - 수량 부족")
                 return
             log.info(f"✅ [execute_buy] 수량 계산 완료: {quantity}주")
             
             # 주문 전송
-            log.info(
-                f"📈 매수 시도: {stock_code} {quantity}주 @ {current_price:,}원 | "
+            order_type = "🔻 물타기" if is_average_down else "📈 매수"
+            log.warning("=" * 70)
+            log.warning(
+                f"{order_type} 시도: {stock_code} {quantity}주 @ {current_price:,}원 | "
                 f"신호 강도: {signal_result['strength']:.2f}"
             )
+            if is_average_down:
+                existing_position = self.risk_manager.positions[stock_code]
+                log.warning(f"   현재 평균가: {existing_position.avg_price:,}원 | 수량: {existing_position.quantity}주")
+                log.warning(f"   물타기 {existing_position.average_down_count + 1}/{Config.MAX_AVERAGE_DOWN_COUNT}회차")
+            log.warning("=" * 70)
             
             log.info(f"🔍 [execute_buy] 키움 API buy_order 호출 중...")
             order_result = self.kiwoom.buy_order(
@@ -924,14 +1041,35 @@ class TradingEngine:
             log.info(f"✅ [execute_buy] buy_order 호출 완료, 결과: {order_result}")
             
             if order_result:
-                # 포지션 추가
-                stock_name = self.kiwoom.get_stock_name(stock_code)  # 🆕 종목명 조회
-                position = self.risk_manager.add_position(
-                    stock_code,
-                    stock_name,
-                    quantity,
-                    current_price
-                )
+                stock_name = self.kiwoom.get_stock_name(stock_code)  # 종목명 조회
+                
+                # 🆕 물타기 처리
+                if is_average_down:
+                    existing_position = self.risk_manager.positions[stock_code]
+                    old_avg_price = existing_position.avg_price
+                    old_quantity = existing_position.quantity
+                    
+                    # 포지션에 추가 매수 반영
+                    existing_position.add_position(quantity, current_price)
+                    
+                    position = existing_position
+                    
+                    log.success("=" * 70)
+                    log.success(f"✅ 물타기 체결 완료!")
+                    log.success(f"   종목: {stock_name} ({stock_code})")
+                    log.success(f"   수량: {old_quantity}주 → {position.quantity}주 (+{quantity}주)")
+                    log.success(f"   평균가: {old_avg_price:,}원 → {position.avg_price:,}원")
+                    log.success(f"   총 투자: {position.total_invested:,}원")
+                    log.success(f"   물타기: {position.average_down_count}/{Config.MAX_AVERAGE_DOWN_COUNT}회")
+                    log.success("=" * 70)
+                else:
+                    # 신규 포지션 추가
+                    position = self.risk_manager.add_position(
+                        stock_code,
+                        stock_name,
+                        quantity,
+                        current_price
+                    )
                 
                 # 🆕 뉴스 점수 설정 (급등주 매수의 경우)
                 if position and 'news_score' in signal_result:
@@ -945,9 +1083,75 @@ class TradingEngine:
                 
                 if position:
                     total_cost = current_price * quantity
-                    log.success("=" * 70)
-                    log.success(f"✅ 매수 체결 완료!")
-                    log.success(f"   종목: {stock_code}")
+                    
+                    # 📦 블랙박스: 거래 기록
+                    try:
+                        trade_reason = signal_result.get('reason', '매수 신호')
+                        if is_average_down:
+                            trade_reason = f"물타기 {position.average_down_count}회차 - {trade_reason}"
+                        
+                        trade_id = self.history_db.record_trade({
+                            'stock_code': stock_code,
+                            'stock_name': stock_name,
+                            'trade_type': 'BUY',
+                            'quantity': quantity,
+                            'price': current_price,
+                            'total_amount': total_cost,
+                            'timestamp': datetime.now().isoformat(),
+                            'order_id': str(order_result),
+                            'reason': trade_reason,
+                            'signal_strength': signal_result.get('strength', 0)
+                        })
+                        
+                        if is_average_down:
+                            # 📦 블랙박스: 포지션 업데이트 (물타기)
+                            if position.db_position_id:
+                                self.history_db.update_position(position.db_position_id, {
+                                    'quantity': position.quantity,
+                                    'entry_price': position.avg_price,  # 평균가로 업데이트
+                                    'total_invested': position.total_invested,
+                                    'average_down_count': position.average_down_count
+                                })
+                                log.debug(f"📦 블랙박스 포지션 업데이트: Position ID={position.db_position_id} (물타기)")
+                        else:
+                            # 📦 블랙박스: 포지션 시작 (신규 매수)
+                            position_id = self.history_db.start_position({
+                                'stock_code': stock_code,
+                                'stock_name': stock_name,
+                                'entry_time': position.entry_time.isoformat(),
+                                'entry_price': current_price,
+                                'quantity': quantity,
+                                'total_invested': total_cost,
+                                'entry_config': json.dumps(self._get_current_config()),
+                                'sell_blocked': 1 if position.sell_blocked else 0
+                            })
+                            
+                            # Position 객체에 DB ID 저장
+                            position.db_position_id = position_id
+                            log.debug(f"📦 블랙박스 포지션 시작: Position ID={position_id}")
+                        
+                        # 📦 블랙박스: 시장 스냅샷 기록
+                        self.history_db.record_market_snapshot({
+                            'timestamp': datetime.now().isoformat(),
+                            'position_id': position.db_position_id,
+                            'market_state': self.market_scheduler.get_current_state().value,
+                            'total_balance': self.risk_manager.current_balance,
+                            'total_asset': self.risk_manager.current_balance + sum(
+                                p.current_price * p.quantity for p in self.risk_manager.positions.values()
+                            ),
+                            'available_cash': self.risk_manager.current_balance,
+                            'stock_code': stock_code,
+                            'current_price': current_price
+                        })
+                        
+                        log.debug(f"📦 블랙박스 기록 완료: Trade ID={trade_id}")
+                    except Exception as e:
+                        log.error(f"❌ 블랙박스 기록 실패: {e}")
+                    
+                    if not is_average_down:
+                        log.success("=" * 70)
+                        log.success(f"✅ 매수 체결 완료!")
+                        log.success(f"   종목: {stock_code}")
                     log.success(f"   수량: {quantity}주")
                     log.success(f"   체결가: {current_price:,}원")
                     log.success(f"   총 금액: {total_cost:,}원")
@@ -1210,6 +1414,15 @@ class TradingEngine:
             )
             
             if order_result:
+                # 포지션 정보 저장 (제거 전)
+                position_data = {
+                    'stock_name': position.stock_name,
+                    'quantity': position.quantity,
+                    'avg_price': position.avg_price,
+                    'entry_time': position.entry_time,
+                    'db_position_id': position.db_position_id
+                }
+                
                 # 포지션 제거
                 profit_loss = self.risk_manager.remove_position(
                     stock_code,
@@ -1218,14 +1431,50 @@ class TradingEngine:
                 )
                 
                 if profit_loss is not None:
-                    total_amount = sell_price * position.quantity
-                    profit_rate = (profit_loss / (position.entry_price * position.quantity)) * 100
+                    total_amount = sell_price * position_data['quantity']
+                    profit_rate = (profit_loss / (position_data['avg_price'] * position_data['quantity'])) * 100
+                    holding_duration = (datetime.now() - position_data['entry_time']).total_seconds()
+                    
+                    # 📦 블랙박스: 거래 기록
+                    try:
+                        trade_id = self.history_db.record_trade({
+                            'stock_code': stock_code,
+                            'stock_name': position_data['stock_name'],
+                            'trade_type': 'SELL',
+                            'quantity': position_data['quantity'],
+                            'price': sell_price,
+                            'total_amount': total_amount,
+                            'timestamp': datetime.now().isoformat(),
+                            'order_id': str(order_result),
+                            'reason': reason,
+                            'position_id': position_data['db_position_id']
+                        })
+                        
+                        # 📦 블랙박스: 포지션 종료
+                        if position_data['db_position_id']:
+                            self.history_db.close_position(position_data['db_position_id'], {
+                                'exit_time': datetime.now().isoformat(),
+                                'exit_price': sell_price,
+                                'exit_reason': reason,
+                                'profit_loss': int(profit_loss),
+                                'profit_loss_percent': profit_rate,
+                                'holding_duration_seconds': int(holding_duration),
+                                'exit_config': json.dumps(self._get_current_config())
+                            })
+                            
+                            # 일일 요약 업데이트
+                            self.history_db.update_daily_summary()
+                            
+                            log.debug(f"📦 블랙박스 기록 완료: Trade ID={trade_id}, Position 종료")
+                    except Exception as e:
+                        log.error(f"❌ 블랙박스 기록 실패: {e}")
+                    
                     emoji = "✅" if profit_loss >= 0 else "❌"
                     log.success("=" * 70)
                     log.success(f"{emoji} 청산 체결 완료! ({reason})")
                     log.success(f"   종목: {stock_code}")
-                    log.success(f"   수량: {position.quantity}주")
-                    log.success(f"   매수가: {position.entry_price:,}원")
+                    log.success(f"   수량: {position_data['quantity']}주")
+                    log.success(f"   매수가: {position_data['avg_price']:,}원")
                     log.success(f"   매도가: {sell_price:,}원")
                     log.success(f"   총 금액: {total_amount:,}원")
                     log.success(f"   손익: {profit_loss:+,}원 ({profit_rate:+.2f}%)")
@@ -1389,10 +1638,16 @@ class TradingEngine:
                     log.warning("=" * 70)
                     
                     # 즉시 매수 실행 (신호 생성 우회)
+                    # 🆕 관심주 보너스 점수
+                    base_strength = 3.0
+                    if hasattr(candidate, 'candidate_type') and candidate.candidate_type == "watchlist":
+                        base_strength = 4.0  # 관심주는 더 강한 신호 (보너스)
+                        log.info("   ⭐ 관심주 보너스 점수 적용: 3.0 → 4.0")
+                    
                     signal_result = {
                         'signal': 'BUY',
-                        'strength': 3.0,  # 급등주는 강한 신호
-                        'reason': f"급등주 감지 (상승률 {candidate.current_change_rate:+.2f}%, 거래량 {candidate.get_volume_ratio():.2f}배)",
+                        'strength': base_strength,
+                        'reason': f"{'⭐관심주' if candidate.candidate_type == 'watchlist' else '급등주'} 감지 (상승률 {candidate.current_change_rate:+.2f}%, 거래량 {candidate.get_volume_ratio():.2f}배)",
                         'news_score': candidate.news_score  # 🆕 뉴스 점수 전달
                     }
                     
@@ -1506,6 +1761,52 @@ class TradingEngine:
         # 자동매매 중지
         if self.is_running:
             self.stop_trading()
+    
+    def _get_current_config(self) -> dict:
+        """
+        현재 설정값 수집 (블랙박스 기록용)
+        
+        매수/매도 시점의 모든 설정값을 수집하여
+        나중에 성과 분석 시 활용할 수 있도록 합니다.
+        
+        Returns:
+            설정값 딕셔너리
+        """
+        return {
+            # 포지션 관리
+            'POSITION_SIZE_PERCENT': Config.POSITION_SIZE_PERCENT,
+            'MAX_STOCKS': Config.MAX_STOCKS,
+            'AUTO_TRADING_RATIO': Config.AUTO_TRADING_RATIO,
+            
+            # 리스크 관리
+            'STOP_LOSS_PERCENT': Config.STOP_LOSS_PERCENT,
+            'TAKE_PROFIT_PERCENT': Config.TAKE_PROFIT_PERCENT,
+            'DAILY_LOSS_LIMIT_PERCENT': Config.DAILY_LOSS_LIMIT_PERCENT,
+            
+            # 급등주 감지
+            'SURGE_THRESHOLD': Config.SURGE_THRESHOLD,
+            'SURGE_VOLUME_RATIO': Config.SURGE_VOLUME_RATIO,
+            'SURGE_MONITORING_CHANGE_RATE': Config.SURGE_MONITORING_CHANGE_RATE,
+            
+            # 추가 매수 (물타기)
+            'ENABLE_AVERAGE_DOWN': Config.ENABLE_AVERAGE_DOWN,
+            'AVERAGE_DOWN_TRIGGER_PERCENT': Config.AVERAGE_DOWN_TRIGGER_PERCENT,
+            'MAX_AVERAGE_DOWN_COUNT': Config.MAX_AVERAGE_DOWN_COUNT,
+            'AVERAGE_DOWN_SIZE_RATIO': Config.AVERAGE_DOWN_SIZE_RATIO,
+            
+            # 뉴스 분석
+            'ENABLE_NEWS_ANALYSIS': Config.ENABLE_NEWS_ANALYSIS,
+            'NEWS_POSITIVE_SURGE_ADJUST': Config.NEWS_POSITIVE_SURGE_ADJUST,
+            'NEWS_NEGATIVE_STOPLOSS_ADJUST': Config.NEWS_NEGATIVE_STOPLOSS_ADJUST,
+            'NEWS_BUY_THRESHOLD': Config.NEWS_BUY_THRESHOLD,
+            'NEWS_SELL_THRESHOLD': Config.NEWS_SELL_THRESHOLD,
+            
+            # 전략
+            'MIN_SIGNAL_STRENGTH': Config.MIN_SIGNAL_STRENGTH,
+            
+            # 타임스탬프
+            'recorded_at': datetime.now().isoformat()
+        }
     
     def _safe_shutdown(self):
         """
