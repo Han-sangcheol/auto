@@ -27,13 +27,13 @@ from PyQt5.QtGui import QFont, QColor
 from datetime import datetime
 from typing import Optional
 from functools import partial
-from market_scheduler import MarketScheduler, MarketState
+from features.market_scheduler import MarketScheduler, MarketState
 from config import Config
-from logger import log
+from utils.logger import log
 
 # 차트 위젯 (선택적 로드)
 try:
-    from advanced_chart_widget import AdvancedChartWidget
+    from gui.advanced_chart_widget import AdvancedChartWidget
     CHART_AVAILABLE = True
 except ImportError:
     CHART_AVAILABLE = False
@@ -41,7 +41,7 @@ except ImportError:
 
 # 통계 위젯 (선택적 로드)
 try:
-    from statistics_widget import StatisticsWidget
+    from gui.statistics_widget import StatisticsWidget
     STATISTICS_AVAILABLE = True
 except ImportError:
     STATISTICS_AVAILABLE = False
@@ -49,7 +49,7 @@ except ImportError:
 
 # 설정 대화상자 (선택적 로드)
 try:
-    from settings_dialog import SettingsDialog
+    from gui.settings_dialog import SettingsDialog
     SETTINGS_AVAILABLE = True
 except ImportError:
     SETTINGS_AVAILABLE = False
@@ -57,7 +57,7 @@ except ImportError:
 
 # 뉴스 모니터링 위젯 (선택적 로드)
 try:
-    from news_monitor_widget import NewsMonitorWidget
+    from gui.news_monitor_widget import NewsMonitorWidget
     NEWS_MONITOR_AVAILABLE = True
 except ImportError:
     NEWS_MONITOR_AVAILABLE = False

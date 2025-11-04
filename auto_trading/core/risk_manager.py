@@ -34,9 +34,9 @@ if risk_manager.should_stop_loss(position, current_price):
 
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
-from logger import log
+from utils.logger import log
 from config import Config
-from fee_calculator import FeeCalculator
+from utils.fee_calculator import FeeCalculator
 
 
 class Position:

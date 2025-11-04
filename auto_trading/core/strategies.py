@@ -31,8 +31,8 @@ BaseStrategy를 상속하여 generate_signal() 메서드 구현
 
 from enum import Enum
 from typing import List, Dict, Optional
-from indicators import calculate_sma, calculate_rsi, calculate_macd
-from logger import log
+from core.indicators import calculate_sma, calculate_rsi, calculate_macd
+from utils.logger import log
 from config import Config
 
 

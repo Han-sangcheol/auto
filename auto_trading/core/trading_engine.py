@@ -53,41 +53,41 @@ import os
 
 from PyQt5.QtCore import QTimer
 
-from kiwoom_api import KiwoomAPI
-from strategies import MultiStrategy, SignalType, create_default_strategies
-from risk_manager import RiskManager
-from indicators import calculate_all_indicators
-from surge_detector import SurgeDetector
-from market_scheduler import MarketScheduler, MarketState
-from logger import log
+from core.kiwoom_api import KiwoomAPI
+from core.strategies import MultiStrategy, SignalType, create_default_strategies
+from core.risk_manager import RiskManager
+from core.indicators import calculate_all_indicators
+from features.surge_detector import SurgeDetector
+from features.market_scheduler import MarketScheduler, MarketState
+from utils.logger import log
 from config import Config
 
 # 뉴스 분석 및 알림 시스템 (선택적 로드)
 try:
-    from news_crawler import NewsCrawler
-    from sentiment_analyzer import SentimentAnalyzer
-    from news_strategy import NewsBasedStrategy
+    from features.news_crawler import NewsCrawler
+    from features.sentiment_analyzer import SentimentAnalyzer
+    from features.news_strategy import NewsBasedStrategy
     NEWS_AVAILABLE = True
 except ImportError:
     NEWS_AVAILABLE = False
     log.warning("뉴스 분석 모듈을 로드할 수 없습니다. (패키지 미설치)")
 
 try:
-    from notification import Notifier
+    from utils.notification import Notifier
     NOTIFICATION_AVAILABLE = True
 except ImportError:
     NOTIFICATION_AVAILABLE = False
     log.warning("알림 시스템을 로드할 수 없습니다. (win10toast 미설치)")
 
 try:
-    from health_monitor import HealthMonitor
+    from features.health_monitor import HealthMonitor
     HEALTH_MONITOR_AVAILABLE = True
 except ImportError:
     HEALTH_MONITOR_AVAILABLE = False
     log.warning("헬스 모니터를 로드할 수 없습니다. (psutil 미설치)")
 
 try:
-    from scheduler import TradingScheduler
+    from features.scheduler import TradingScheduler
     SCHEDULER_AVAILABLE = True
 except ImportError:
     SCHEDULER_AVAILABLE = False
@@ -115,7 +115,7 @@ class TradingEngine:
         # 차트는 advanced_chart_widget.py에서 yfinance로 조회하여 표시
         
         # 📦 거래 이력 블랙박스 데이터베이스
-        from trading_history_db import TradingHistoryDB
+        from database.trading_history_db import TradingHistoryDB
         self.history_db = TradingHistoryDB(
             db_path=os.path.join(Config.LOG_DIR, "trading_history.db")
         )

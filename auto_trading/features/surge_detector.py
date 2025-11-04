@@ -27,7 +27,7 @@ import time
 import threading
 import os
 import json
-from logger import log
+from utils.logger import log
 from config import Config
 
 
@@ -327,8 +327,8 @@ class SurgeDetector:
         self.sentiment_analyzer = None
         if Config.ENABLE_NEWS_ANALYSIS:
             try:
-                from news_crawler import NewsCrawler
-                from sentiment_analyzer import SentimentAnalyzer
+                from features.news_crawler import NewsCrawler
+                from features.sentiment_analyzer import SentimentAnalyzer
                 
                 self.news_crawler = NewsCrawler()
                 self.sentiment_analyzer = SentimentAnalyzer()
