@@ -25,7 +25,7 @@ from typing import Dict, List, Tuple
 from collections import defaultdict
 import re
 
-from logger import log
+from utils.logger import log
 
 
 class SentimentAnalyzer:

@@ -19,7 +19,7 @@ notifier.notify_trade("매수", "삼성전자", 10, 75000)
 """
 
 from typing import Optional
-from logger import log
+from utils.logger import log
 import platform
 
 # Windows 토스트 알림 (선택적)

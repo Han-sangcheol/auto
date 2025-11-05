@@ -2,6 +2,10 @@
 # UTF-8 Encoding Support
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
+# Change to auto_trading directory (parent of scripts)
+$scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location (Join-Path $scriptPath "..")
+
 Write-Host ""
 Write-Host "╔══════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
 Write-Host "║                                                          ║" -ForegroundColor Cyan
@@ -27,15 +31,34 @@ if (-not (Test-Path ".env")) {
     Write-Host "[OK] .env file exists" -ForegroundColor Green
 }
 
-# Check virtual environment
-if (Test-Path ".venv\Scripts\Activate.ps1") {
-    Write-Host "[OK] Virtual environment exists" -ForegroundColor Green
+# Check virtual environment (32-bit)
+if (Test-Path "..\.venv32\Scripts\Activate.ps1") {
+    Write-Host "[OK] Virtual environment (.venv32) exists" -ForegroundColor Green
 } else {
-    Write-Host "[X] Virtual environment not found!" -ForegroundColor Red
+    Write-Host "[X] 32-bit virtual environment not found!" -ForegroundColor Red
     Write-Host ""
-    Write-Host "Please run setup.ps1 first." -ForegroundColor Yellow
+    Write-Host "Please run setup.ps1 first to create .venv32." -ForegroundColor Yellow
+    Write-Host "Or install Python 32-bit: scripts\install_python32.ps1" -ForegroundColor Yellow
     Write-Host ""
     $hasError = $true
+}
+
+# Verify 32-bit Python
+if (-not $hasError) {
+    $pythonPath = "..\.venv32\Scripts\python.exe"
+    if (Test-Path $pythonPath) {
+        $is64bit = & $pythonPath -c "import sys; print(sys.maxsize > 2**32)" 2>$null
+        if ($is64bit -eq "True") {
+            Write-Host "[X] 64-bit Python detected!" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "Kiwoom API requires 32-bit Python." -ForegroundColor Yellow
+            Write-Host "Please install 32-bit Python: scripts\install_python32.ps1" -ForegroundColor Yellow
+            Write-Host ""
+            $hasError = $true
+        } else {
+            Write-Host "[OK] 32-bit Python confirmed" -ForegroundColor Green
+        }
+    }
 }
 
 # Check logs folder
@@ -58,9 +81,9 @@ Write-Host "   Initializing program..." -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Activate virtual environment
-Write-Host "Activating virtual environment..." -ForegroundColor Yellow
-$activateScript = ".venv\Scripts\Activate.ps1"
+# Activate virtual environment (32-bit)
+Write-Host "Activating 32-bit virtual environment..." -ForegroundColor Yellow
+$activateScript = "..\.venv32\Scripts\Activate.ps1"
 if (Test-Path $activateScript) {
     & $activateScript
     Write-Host "[Done] Virtual environment activated!" -ForegroundColor Green
@@ -69,16 +92,16 @@ if (Test-Path $activateScript) {
 }
 Write-Host ""
 
-# Run Python program
-Write-Host "[Running] Starting Python program..." -ForegroundColor Green
+# Run Python program (32-bit)
+Write-Host "[Running] Starting Python program (32-bit)..." -ForegroundColor Green
 Write-Host ""
 Write-Host "** When the certificate window appears, select your certificate and enter password." -ForegroundColor Yellow
 Write-Host "** Press Ctrl+C to stop the program at any time." -ForegroundColor Yellow
 Write-Host ""
 
-# Execute main.py
+# Execute main.py with 32-bit Python
 try {
-    python main.py
+    & "..\.venv32\Scripts\python.exe" main.py
     $exitCode = $LASTEXITCODE
 } catch {
     $exitCode = 1

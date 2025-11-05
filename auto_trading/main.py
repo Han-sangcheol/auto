@@ -19,10 +19,48 @@ start.bat (더블클릭)
 
 import sys
 import os
+import platform
 import signal
 from datetime import datetime
 from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtCore import QTimer
+
+
+def check_python_bitness():
+    """키움 API 사용을 위한 32bit Python 체크"""
+    is_64bit = sys.maxsize > 2**32
+    
+    if is_64bit:
+        print("\n" + "="*70)
+        print("❌ ERROR: 64-bit Python detected!")
+        print("="*70)
+        print("\n키움증권 Open API는 32-bit Python만 지원합니다.\n")
+        print("현재 Python 버전:", platform.architecture()[0])
+        print("\n해결 방법:")
+        print("  1. 32-bit Python 설치 (관리자 권한 PowerShell):")
+        print("     cd auto_trading/scripts")
+        print("     .\\install_python32.ps1")
+        print("\n  2. 또는 수동 설치:")
+        print("     https://www.python.org/downloads/")
+        print("     → Windows installer (32-bit) 다운로드")
+        print("\n  3. 32-bit 가상환경으로 실행:")
+        print("     cd D:\\cleonAI")
+        print("     C:\\Python32\\python.exe -m venv .venv32")
+        print("     .\\.venv32\\Scripts\\Activate.ps1")
+        print("     cd auto_trading")
+        print("     pip install -r requirements.txt")
+        print("     python main.py")
+        print("\n  4. 실행 스크립트 사용:")
+        print("     cd auto_trading")
+        print("     scripts\\start.bat")
+        print("\n자세한 가이드: docs/installation/PYTHON_32BIT_SETUP.md")
+        print("="*70 + "\n")
+        sys.exit(1)
+
+
+# ⚠️ 프로그램 시작 전 필수 체크 - 키움 API는 32bit Python만 지원
+check_python_bitness()
+
 from core.kiwoom_api import KiwoomAPI
 from core.trading_engine import TradingEngine
 from gui.monitor_gui import MonitorWindow

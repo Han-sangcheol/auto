@@ -9,13 +9,13 @@ echo   CleonAI Auto-Trading Program v1.3
 echo ============================================================
 echo.
 
-REM Change to script directory
-cd /d "%~dp0"
+REM Change to auto_trading directory (parent of scripts)
+cd /d "%~dp0\.."
 
 REM ============================================================
 REM Step 1: Check .env file
 REM ============================================================
-echo [1/5] Checking .env file...
+echo [1/6] Checking .env file...
 if not exist .env (
     echo [!] .env file not found - creating from template...
     if exist env.template (
@@ -35,14 +35,17 @@ if not exist .env (
 )
 
 REM ============================================================
-REM Step 2: Check virtual environment
+REM Step 2: Check virtual environment (32-bit)
 REM ============================================================
-echo [2/5] Checking virtual environment...
-if not exist .venv\Scripts\python.exe (
-    echo [ERROR] Virtual environment not found!
+echo [2/6] Checking virtual environment...
+if not exist ..\.venv32\Scripts\python.exe (
+    echo [ERROR] 32-bit virtual environment not found!
     echo.
-    echo Please run setup.bat first:
-    echo   setup.bat
+    echo Please run setup.bat first to create .venv32:
+    echo   scripts\setup.bat
+    echo.
+    echo Or install Python 32-bit:
+    echo   scripts\install_python32.ps1
     echo.
     pause
     exit /b 1
@@ -50,10 +53,10 @@ if not exist .venv\Scripts\python.exe (
 echo [OK] Virtual environment exists
 
 REM ============================================================
-REM Step 3: Test Python
+REM Step 3: Test Python (32-bit check)
 REM ============================================================
-echo [3/5] Testing Python...
-.venv\Scripts\python.exe --version
+echo [3/6] Testing Python...
+..\.venv32\Scripts\python.exe --version
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] Python test failed!
     pause
@@ -62,15 +65,32 @@ if %ERRORLEVEL% NEQ 0 (
 echo [OK] Python works
 
 REM ============================================================
-REM Step 4: Check PyQt5
+REM Step 4: Verify 32-bit Python
 REM ============================================================
-echo [4/5] Checking PyQt5...
-.venv\Scripts\python.exe -c "import PyQt5" 2>nul
+echo [4/6] Verifying 32-bit Python...
+..\.venv32\Scripts\python.exe -c "import sys; sys.exit(0 if sys.maxsize <= 2**32 else 1)" 2>nul
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] 64-bit Python detected!
+    echo.
+    echo Kiwoom API requires 32-bit Python.
+    echo Please install 32-bit Python:
+    echo   scripts\install_python32.ps1
+    echo.
+    pause
+    exit /b 1
+)
+echo [OK] 32-bit Python confirmed
+
+REM ============================================================
+REM Step 5: Check PyQt5
+REM ============================================================
+echo [5/6] Checking PyQt5...
+..\.venv32\Scripts\python.exe -c "import PyQt5" 2>nul
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] PyQt5 not installed!
     echo.
     echo Installing PyQt5...
-    .venv\Scripts\pip.exe install PyQt5
+    ..\.venv32\Scripts\pip.exe install PyQt5
     if %ERRORLEVEL% NEQ 0 (
         echo [ERROR] Failed to install PyQt5!
         pause
@@ -80,9 +100,9 @@ if %ERRORLEVEL% NEQ 0 (
 echo [OK] PyQt5 installed
 
 REM ============================================================
-REM Step 5: Create logs folder
+REM Step 6: Create logs folder
 REM ============================================================
-echo [5/5] Checking logs folder...
+echo [6/6] Checking logs folder...
 if not exist logs (
     mkdir logs
 )
@@ -100,9 +120,9 @@ echo ** Press Ctrl+C to stop
 echo.
 
 REM ============================================================
-REM Run the program
+REM Run the program (32-bit Python)
 REM ============================================================
-.venv\Scripts\python.exe main.py
+..\.venv32\Scripts\python.exe main.py
 
 REM ============================================================
 REM Exit handling

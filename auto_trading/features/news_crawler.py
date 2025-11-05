@@ -43,7 +43,7 @@ except ImportError:
     print("⚠️  requests, beautifulsoup4가 설치되지 않았습니다.")
     print("   pip install requests beautifulsoup4")
 
-from logger import log
+from utils.logger import log
 
 
 class NewsItem:

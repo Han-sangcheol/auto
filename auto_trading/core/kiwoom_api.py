@@ -30,7 +30,7 @@ from PyQt5.QAxContainer import QAxWidget
 from PyQt5.QtCore import QEventLoop
 from typing import Dict, List, Optional, Callable
 import time
-from logger import log
+from utils.logger import log
 from config import Config
 
 

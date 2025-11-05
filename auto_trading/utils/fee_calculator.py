@@ -24,7 +24,7 @@ sell_fee = calculator.calculate_sell_fee(1000000)  # 매도 금액
 """
 
 from typing import Dict
-from logger import log
+from utils.logger import log
 
 
 class FeeCalculator:

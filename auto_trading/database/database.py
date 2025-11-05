@@ -28,7 +28,7 @@ from typing import Dict, List, Optional, Tuple
 import threading
 import csv
 
-from logger import log
+from utils.logger import log
 
 
 class StockDatabase:

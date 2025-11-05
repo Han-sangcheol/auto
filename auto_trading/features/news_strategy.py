@@ -22,10 +22,10 @@ signal = strategy.generate_signal(stock_code)
 from typing import Dict, Optional
 from enum import Enum
 
-from news_crawler import NewsCrawler
-from sentiment_analyzer import SentimentAnalyzer
-from strategies import SignalType, BaseStrategy
-from logger import log
+from features.news_crawler import NewsCrawler
+from features.sentiment_analyzer import SentimentAnalyzer
+from core.strategies import SignalType, BaseStrategy
+from utils.logger import log
 
 
 class NewsBasedStrategy(BaseStrategy):

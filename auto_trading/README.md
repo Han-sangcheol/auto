@@ -2,6 +2,88 @@
 
 키움증권 Open API를 활용한 PC 기반 Python 자동매매 시스템
 
+---
+
+## ⚠️ 🔴 절대 변경 금지 - 하이브리드 아키텍처 🔴 ⚠️
+
+> **경고**: 이 섹션은 프로젝트의 핵심 아키텍처입니다. 절대로 수정하지 마십시오!
+
+### 🏗️ 32bit/64bit 하이브리드 구조 (2025-11-05 확정)
+
+**이 프로젝트는 32bit와 64bit Python을 동시에 사용합니다.**
+
+```
+D:\cleonAI\
+├── .venv32\              # 32bit Python (키움 API 전용)
+│   └── auto_trading 실행
+│
+├── .venv\                # 64bit Python (데이터 분석)
+│   └── analysis 실행
+│
+├── auto_trading\         # 🔴 32bit 전용 모듈
+│   ├── requirements_32bit.txt  ← 이것만 사용!
+│   ├── main.py
+│   └── data/stocks.db (SQLite 공유)
+│
+└── analysis\             # ✅ 64bit 전용 모듈
+    ├── requirements_64bit.txt  ← 고급 분석용
+    └── 시각화/백테스팅
+```
+
+### 📋 핵심 원칙 (절대 변경 금지)
+
+1. **auto_trading은 항상 32bit Python으로만 실행**
+   - 키움 API는 32bit만 지원
+   - `.venv32` 가상환경 사용
+   - `requirements_32bit.txt` 패키지만 설치
+
+2. **빌드가 필요한 패키지는 64bit 모듈로 분리**
+   - psutil, yfinance, pandas-ta 등
+   - Visual C++ 빌드 도구 필요 패키지
+   - 32bit에서 빌드 실패하는 모든 패키지
+
+3. **데이터 공유는 SQLite를 통해서만**
+   - `auto_trading/data/stocks.db`
+   - 32bit → 쓰기, 64bit → 읽기
+
+4. **절대로 requirements.txt를 통합하지 말것**
+   - `requirements_32bit.txt` (자동매매)
+   - `requirements_64bit.txt` (분석)
+   - 분리 유지 필수!
+
+### 🚫 하지 말아야 할 것
+
+- ❌ requirements.txt에 psutil, yfinance 추가
+- ❌ 64bit Python으로 auto_trading 실행
+- ❌ 32bit에서 고급 분석 패키지 설치 시도
+- ❌ 두 requirements 파일 통합
+
+### ✅ 올바른 실행 방법
+
+**자동매매 (32bit)**:
+```powershell
+cd D:\cleonAI\auto_trading
+..\.venv32\Scripts\Activate.ps1
+pip install -r requirements_32bit.txt
+python main.py
+```
+
+**데이터 분석 (64bit)**:
+```powershell
+cd D:\cleonAI\analysis
+..\.venv\Scripts\Activate.ps1
+pip install -r requirements_64bit.txt
+jupyter notebook
+```
+
+### 📚 상세 문서
+
+- **아키텍처**: [HYBRID_ARCHITECTURE.md](HYBRID_ARCHITECTURE.md) ⭐ 필독
+- **32bit 설정**: [docs/installation/PYTHON_32BIT_SETUP.md](docs/installation/PYTHON_32BIT_SETUP.md)
+- **64bit 분석**: [../analysis/README.md](../analysis/README.md)
+
+---
+
 ## 개요
 
 이 프로그램은 키움증권 Open API+를 사용하여 주식을 자동으로 매매하는 시스템입니다. 
@@ -32,9 +114,21 @@
 - **메모리**: 4GB RAM 이상
 - **키움증권**: 계좌 + Open API+ 설치 + 공동인증서
 
-> **중요**: 키움 Open API는 32비트 Python만 지원합니다.  
-> 이미 64비트 Python을 사용 중이라면, 별도로 32비트를 설치하여 독립적으로 사용할 수 있습니다.  
-> 자세한 내용: [Python 32비트 설치](docs/installation/SETUP_ISOLATED_PYTHON.md)
+> ### ⚠️ 중요: Python 32bit 필수!
+> 
+> **키움 Open API는 32bit Python만 지원합니다.**
+> 
+> - 현재 64bit Python 사용 중이라면 추가로 32bit 설치 필요
+> - 두 버전은 독립적으로 사용 가능 (충돌 없음)
+> - 자동 설치 스크립트 제공 (관리자 권한 필요)
+> 
+> **빠른 설치:**
+> ```powershell
+> cd auto_trading\scripts
+> .\install_python32.ps1  # 관리자 권한 PowerShell
+> ```
+> 
+> 📖 **자세한 가이드**: [Python 32bit 설치](docs/installation/PYTHON_32BIT_SETUP.md)
 
 ## 📚 문서 가이드
 
@@ -113,11 +207,28 @@ analyzer.generate_report('005930', start_date, datetime.now(), 'report.html')
 
 ## 빠른 시작 (요약)
 
+### ✅ 실행 전 체크리스트
+
+1. **Python 32bit 설치 확인** ⚠️ 필수!
+   ```powershell
+   python -c "import sys; print('32bit' if sys.maxsize <= 2**32 else '64bit')"
+   ```
+   - 결과가 `32bit`이면 OK
+   - `64bit`이면 [Python 32bit 설치](docs/installation/PYTHON_32BIT_SETUP.md) 필요
+
+2. **키움 Open API+ 설치**
+   - [설치 가이드](docs/installation/KIWOOM_API_SETUP.md) 참고
+
+3. **모의투자 계좌 준비**
+   - [키움 홈페이지](https://www.kiwoom.com)에서 신청
+
 ### 🚀 원클릭 자동 설치 (권장)
 
 PowerShell 관리자 권한으로:
 ```powershell
-.\auto_setup_complete.ps1
+cd auto_trading\scripts
+.\install_python32.ps1  # Python 32bit 자동 설치
+.\setup.ps1             # 가상환경 생성 및 패키지 설치
 ```
 → Python 32비트 다운로드 + 설치 + 환경 구성 모두 자동!
 
@@ -125,20 +236,19 @@ PowerShell 관리자 권한으로:
 
 ### 📝 단계별 설치
 
-```bash
+```powershell
 # 0. Python 32비트 설치 (처음 1회만) ⚠️ 필수
-.\install_python32.ps1           # 자동 다운로드 + 설치
-# 또는
-.\setup_python32.ps1             # 이미 설치된 경우
-# 또는
-SETUP_ISOLATED_PYTHON.md 참고   # 수동 설치 가이드
+cd auto_trading\scripts
+.\install_python32.ps1           # 자동 다운로드 + 설치 (관리자 권한)
 
-# 1. 설치 스크립트 실행 (처음 1회만)
-.\setup.ps1     # PowerShell (권장)
-setup.bat       # CMD
+# 1. 가상환경 생성 및 패키지 설치 (처음 1회만)
+cd ..
+scripts\setup.bat       # CMD
+# 또는
+scripts\setup.ps1       # PowerShell (권장)
 
 # 2. .env 파일 설정 (중요!)
-# 파일 탐색기에서 .env 파일 생성 후 메모장으로 열기
+# 파일 탐색기에서 .env 파일을 메모장으로 열기
 # 필수 항목:
 #   KIWOOM_ACCOUNT_NUMBER=계좌번호     # 모의투자는 8로 시작
 #   KIWOOM_ACCOUNT_PASSWORD=0000       # HTS에서 설정한 4자리 비밀번호
@@ -146,19 +256,41 @@ setup.bat       # CMD
 #
 # 계좌 비밀번호 설정 방법: docs/troubleshooting/PASSWORD_ISSUE.md 참고
 
-# 3. 프로그램 실행
-.\start.ps1     # PowerShell (권장)
-start.bat       # CMD
+# 3. 프로그램 실행 (32bit Python 가상환경 자동 활성화)
+scripts\start.bat       # CMD
+# 또는
+scripts\start.ps1       # PowerShell (권장)
 ```
+
+### 🔍 문제 해결
+
+**"64-bit Python detected!" 오류가 발생하면:**
+1. Python 32bit 설치: `scripts\install_python32.ps1`
+2. 가상환경 재생성: `scripts\setup.bat`
+3. 실행 스크립트 사용: `scripts\start.bat`
+
+📖 **자세한 가이드**: [Python 32bit 설치](docs/installation/PYTHON_32BIT_SETUP.md)
 
 ## 프로젝트 구조
 
+**2025-11-05 업데이트**: Python 32bit/64bit 명확한 구분 추가  
 **2025-11-04 구조 개선**: 모듈을 역할별로 분리하여 체계적으로 관리합니다.
+
+### Python 환경 구분
+
+```
+D:\cleonAI\
+├── .venv32\          # ⚠️ 32bit Python (auto_trading 전용)
+├── .venv\            # ✅ 64bit Python (backend, frontend 등)
+└── auto_trading\     # 🔴 32bit Python 필수 (키움 API)
+```
+
+### 파일 구조
 
 ```
 auto_trading/
 ├── README.md                    # 이 문서
-├── main.py                      # 프로그램 진입점
+├── main.py                      # 프로그램 진입점 (32bit 체크 포함)
 ├── config.py                    # 설정 관리
 │
 ├── core/                        # 📦 핵심 자동매매 로직
@@ -196,9 +328,9 @@ auto_trading/
 │   └── notification.py          # 알림 시스템
 │
 ├── scripts/                     # 📜 실행 스크립트 및 설치 도구
-│   ├── setup.ps1 / setup.bat    # 설치 스크립트
-│   ├── start.ps1 / start.bat    # 실행 스크립트
-│   ├── install_python32.ps1     # Python 32비트 자동 설치
+│   ├── setup.ps1 / setup.bat    # 설치 스크립트 (.venv32 생성)
+│   ├── start.ps1 / start.bat    # 실행 스크립트 (32bit Python 자동)
+│   ├── install_python32.ps1     # Python 32비트 자동 설치 ⭐
 │   └── ...
 │
 ├── docs/                        # 📚 문서
@@ -318,8 +450,27 @@ python engine/main.py
 
 
 
+## PowerShell에서 직접 가상환경을 생성:
+# 1. 프로젝트 루트로 이동
+cd D:\cleonAI
 
+# 2. 32bit Python으로 가상환경 생성
+C:\Python32\python.exe -m venv .venv32
 
+# 3. 가상환경 활성화
+.\.venv32\Scripts\Activate.ps1
+
+# 4. auto_trading 폴더로 이동
+cd auto_trading
+
+# 5. pip 업그레이드
+python -m pip install --upgrade pip
+
+# 6. 패키지 설치
+pip install -r requirements.txt
+
+# 7. 프로그램 실행
+scripts\start.bat
 
 
 

@@ -24,7 +24,7 @@ from typing import Optional, Dict, List
 from pathlib import Path
 import math
 
-from logger import log
+from utils.logger import log
 
 
 class DataAnalyzer:

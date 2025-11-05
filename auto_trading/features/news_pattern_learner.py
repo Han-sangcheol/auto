@@ -24,7 +24,7 @@ import json
 import os
 from typing import Dict, Optional, List
 from datetime import datetime
-from logger import log
+from utils.logger import log
 
 try:
     from bs4 import BeautifulSoup

@@ -26,7 +26,7 @@ import threading
 
 from PyQt5.QtCore import QTimer
 
-from logger import log
+from utils.logger import log
 
 
 class Candle:

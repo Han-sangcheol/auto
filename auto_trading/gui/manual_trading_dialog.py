@@ -26,7 +26,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QColor
 from typing import Dict, Optional
-from logger import log
+from utils.logger import log
 
 
 class ManualTradingDialog(QDialog):

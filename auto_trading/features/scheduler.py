@@ -15,7 +15,7 @@ import time
 import threading
 from datetime import datetime, time as dt_time
 from typing import Optional, Callable
-from logger import log
+from utils.logger import log
 
 
 class TradingScheduler:

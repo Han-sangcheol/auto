@@ -22,7 +22,7 @@ import threading
 import psutil
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
-from logger import log
+from utils.logger import log
 
 
 class HealthMonitor:

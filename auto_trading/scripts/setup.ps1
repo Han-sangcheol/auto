@@ -1,63 +1,106 @@
-﻿﻿# CleonAI Auto-Trading Setup Script
+﻿﻿# CleonAI Auto-Trading Setup Script (32-bit Python)
 # UTF-8 Encoding Support
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+# Change to auto_trading directory (parent of scripts folder)
+$scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location (Join-Path $scriptPath "..")
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "   CleonAI Auto-Trading Setup" -ForegroundColor Cyan
+Write-Host "   (32-bit Python for Kiwoom API)" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Check Python Version
-Write-Host "Checking Python version..." -ForegroundColor Yellow
-try {
-    $pythonVersion = python --version 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "Python is not installed."
-    }
-    Write-Host "Python version: $pythonVersion" -ForegroundColor Green
-    Write-Host ""
-    
-    # Check if Python version is 3.11 or higher
-    if ($pythonVersion -match "Python (\d+)\.(\d+)") {
-        $major = [int]$matches[1]
-        $minor = [int]$matches[2]
-        if ($major -lt 3 -or ($major -eq 3 -and $minor -lt 11)) {
-            Write-Host "[Warning] Python 3.11 or higher is recommended." -ForegroundColor Yellow
-            Write-Host "Current version: Python $major.$minor" -ForegroundColor Yellow
-            Write-Host ""
-        }
-    }
-} catch {
-    Write-Host "[Error] Python is not installed." -ForegroundColor Red
-    Write-Host "Please install Python 3.11 or higher." -ForegroundColor Red
-    Write-Host "Download: https://www.python.org/downloads/" -ForegroundColor Yellow
-    Write-Host ""
-    Read-Host "Press Enter to continue"
-    exit 1
-}
+# Determine Python 32-bit path
+$python32 = $null
 
-# Create Virtual Environment
-if (-not (Test-Path ".venv")) {
-    Write-Host "Creating virtual environment..." -ForegroundColor Yellow
-    python -m venv .venv
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "[Error] Failed to create virtual environment." -ForegroundColor Red
-        Read-Host "Press Enter to continue"
+# Check for C:\Python32 first (recommended)
+if (Test-Path "C:\Python32\python.exe") {
+    Write-Host "[Found] Python 32-bit at C:\Python32\" -ForegroundColor Green
+    $python32 = "C:\Python32\python.exe"
+} else {
+    Write-Host "[!] Python 32-bit not found at C:\Python32\" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Checking system Python..." -ForegroundColor Yellow
+    
+    try {
+        $pythonVersion = python --version 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "Python is not installed."
+        }
+        
+        # Check if system Python is 32-bit
+        $is64bit = & python -c "import sys; print(sys.maxsize > 2**32)" 2>$null
+        if ($is64bit -eq "True") {
+            Write-Host "[ERROR] System Python is 64-bit!" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "Kiwoom API requires 32-bit Python." -ForegroundColor Yellow
+            Write-Host "Please install Python 32-bit:" -ForegroundColor Yellow
+            Write-Host "  scripts\install_python32.ps1" -ForegroundColor White
+            Write-Host ""
+            Read-Host "Press Enter to exit"
+            exit 1
+        }
+        
+        $python32 = "python"
+        Write-Host "[OK] System Python is 32-bit" -ForegroundColor Green
+    } catch {
+        Write-Host "[ERROR] No Python found!" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Please install Python 32-bit:" -ForegroundColor Yellow
+        Write-Host "1. Run: scripts\install_python32.ps1" -ForegroundColor White
+        Write-Host "2. Or download from: https://www.python.org/downloads/" -ForegroundColor White
+        Write-Host "   (Select Windows installer 32-bit)" -ForegroundColor White
+        Write-Host ""
+        Read-Host "Press Enter to exit"
         exit 1
     }
-    Write-Host "[Done] Virtual environment created!" -ForegroundColor Green
-} else {
-    Write-Host "[OK] Virtual environment already exists." -ForegroundColor Green
 }
+
+$pythonVersion = & $python32 --version 2>&1
+Write-Host "Python version: $pythonVersion" -ForegroundColor Green
+Write-Host ""
+
+# Create Virtual Environment in project root (.venv32)
+# Go to project root (parent of auto_trading)
+Set-Location ..
+if (-not (Test-Path ".venv32")) {
+    Write-Host "Creating 32-bit virtual environment (.venv32)..." -ForegroundColor Yellow
+    & $python32 -m venv .venv32
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] Failed to create virtual environment!" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Troubleshooting:" -ForegroundColor Yellow
+        Write-Host "1. Check if Python 32-bit is properly installed" -ForegroundColor White
+        Write-Host "2. Try running as Administrator" -ForegroundColor White
+        Write-Host "3. Check disk space" -ForegroundColor White
+        Write-Host ""
+        Set-Location auto_trading
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
+    Write-Host "[OK] Virtual environment created!" -ForegroundColor Green
+} else {
+    Write-Host "[OK] Virtual environment (.venv32) already exists." -ForegroundColor Green
+}
+
+# Go back to auto_trading folder
+Set-Location auto_trading
 Write-Host ""
 
 # Activate Virtual Environment
-Write-Host "Activating virtual environment..." -ForegroundColor Yellow
-$activateScript = ".venv\Scripts\Activate.ps1"
+Write-Host "Activating 32-bit virtual environment..." -ForegroundColor Yellow
+$activateScript = "..\.venv32\Scripts\Activate.ps1"
 if (Test-Path $activateScript) {
     & $activateScript
-    Write-Host "[Done] Virtual environment activated!" -ForegroundColor Green
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[WARNING] Failed to activate virtual environment" -ForegroundColor Yellow
+        Write-Host "Continuing anyway..." -ForegroundColor Yellow
+    } else {
+        Write-Host "[Done] Virtual environment activated!" -ForegroundColor Green
+    }
 } else {
     Write-Host "[Warning] Virtual environment activation script not found." -ForegroundColor Yellow
     Write-Host "Continuing..." -ForegroundColor Yellow
@@ -66,7 +109,7 @@ Write-Host ""
 
 # Upgrade pip
 Write-Host "Upgrading pip..." -ForegroundColor Yellow
-python -m pip install --upgrade pip
+& "..\.venv32\Scripts\python.exe" -m pip install --upgrade pip
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[Warning] Failed to upgrade pip. Continuing..." -ForegroundColor Yellow
 }
@@ -77,7 +120,7 @@ if (Test-Path "requirements.txt") {
     Write-Host "Installing required packages..." -ForegroundColor Yellow
     Write-Host "(This may take about 5 minutes)" -ForegroundColor Gray
     Write-Host ""
-    python -m pip install -r requirements.txt
+    & "..\.venv32\Scripts\python.exe" -m pip install -r requirements.txt
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[Error] Failed to install packages." -ForegroundColor Red
         Write-Host "Please check requirements.txt file." -ForegroundColor Yellow

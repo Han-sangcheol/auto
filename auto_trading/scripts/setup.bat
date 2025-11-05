@@ -1,38 +1,95 @@
 @echo off
-REM CleonAI Auto-Trading Setup Script
+REM CleonAI Auto-Trading Setup Script (32-bit Python)
+
+REM Change to auto_trading directory (parent of scripts folder)
+cd /d "%~dp0\.."
 
 echo ==========================================
 echo    CleonAI Auto-Trading Setup
+echo    (32-bit Python for Kiwoom API)
 echo ==========================================
 echo.
 
-REM Check Python version
+REM Determine Python 32-bit path
+set PYTHON_32=
+
+REM Check for C:\Python32 first (recommended)
+if exist C:\Python32\python.exe (
+    echo [Found] Python 32-bit at C:\Python32\
+    set PYTHON_32=C:\Python32\python.exe
+    goto :python_found
+)
+
+echo [!] Python 32-bit not found at C:\Python32\
+echo.
+echo Checking system Python...
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo Error: Python is not installed.
-    echo Please install Python 3.11 or higher.
-    echo Download: https://www.python.org/downloads/
+    echo [ERROR] No Python found!
+    echo.
+    echo Please install Python 32-bit:
+    echo 1. Run: scripts\install_python32.ps1
+    echo 2. Or download from: https://www.python.org/downloads/
+    echo    (Select Windows installer 32-bit)
+    echo.
     pause
     exit /b 1
 )
 
+REM Check if system Python is 32-bit
+python -c "import sys; sys.exit(0 if sys.maxsize <= 2**32 else 1)" 2>nul
+if errorlevel 1 (
+    echo [ERROR] System Python is 64-bit!
+    echo.
+    echo Kiwoom API requires 32-bit Python.
+    echo Please install Python 32-bit:
+    echo   scripts\install_python32.ps1
+    echo.
+    pause
+    exit /b 1
+)
+set PYTHON_32=python
+
+:python_found
 echo Python version check:
-python --version
+%PYTHON_32% --version
 echo.
 
-REM Create virtual environment
-if not exist .venv (
-    echo Creating virtual environment...
-    python -m venv .venv
-    echo Virtual environment created!
+REM Create virtual environment in project root (.venv32)
+REM Go to project root (parent of auto_trading)
+cd ..
+if not exist .venv32 (
+    echo Creating 32-bit virtual environment (.venv32)...
+    %PYTHON_32% -m venv .venv32
+    if errorlevel 1 (
+        echo [ERROR] Failed to create virtual environment!
+        echo.
+        echo Troubleshooting:
+        echo 1. Check if Python 32-bit is properly installed
+        echo 2. Try running as Administrator
+        echo 3. Check disk space
+        echo.
+        cd auto_trading
+        pause
+        exit /b 1
+    )
+    echo [OK] Virtual environment created!
 ) else (
-    echo Virtual environment already exists.
+    echo [OK] Virtual environment (.venv32) already exists.
 )
+
+REM Go back to auto_trading folder
+cd auto_trading
 echo.
 
 REM Activate virtual environment
-echo Activating virtual environment...
-call .venv\Scripts\activate.bat
+echo Activating 32-bit virtual environment...
+call ..\.venv32\Scripts\activate.bat
+if errorlevel 1 (
+    echo [WARNING] Failed to activate virtual environment
+    echo Continuing anyway...
+)
+echo.
 
 REM Upgrade pip
 echo Upgrading pip...
@@ -78,13 +135,15 @@ if not exist .env (
         echo KIWOOM_ACCOUNT_PASSWORD=1234
         echo WATCH_LIST=005930,000660,035720
         echo.
-    ) else if exist .env.example (
-        copy .env.example .env >nul 2>&1
-        echo [Success] .env file created.
-        echo Please edit .env file to complete setup.
     ) else (
-        echo [Warning] env.template file not found.
-        echo Please create .env file manually.
+        if exist .env.example (
+            copy .env.example .env >nul 2>&1
+            echo [Success] .env file created.
+            echo Please edit .env file to complete setup.
+        ) else (
+            echo [Warning] env.template file not found.
+            echo Please create .env file manually.
+        )
     )
 ) else (
     echo [OK] .env file already exists.

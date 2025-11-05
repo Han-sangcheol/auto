@@ -33,7 +33,7 @@ from enum import Enum
 from datetime import datetime, time as dt_time, timedelta
 from typing import Optional, Callable
 from PyQt5.QtCore import QTimer
-from logger import log
+from utils.logger import log
 
 
 class MarketState(Enum):

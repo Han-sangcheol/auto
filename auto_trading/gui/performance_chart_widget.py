@@ -37,8 +37,8 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import numpy as np
 
-from logger import log
-from trading_history_db import TradingHistoryDB
+from utils.logger import log
+from database.trading_history_db import TradingHistoryDB
 
 
 class PerformanceChartWidget(QWidget):
